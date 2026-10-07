@@ -223,6 +223,14 @@
   .chip.blue{background:#EAF1FE;color:#2563EB;border-color:#CFDDFB}
   .ir-sub td{background:#F8F8FB;padding:2px 6px 10px 22px !important}
   .irg-table td{vertical-align:middle}
+  .ir-filter{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+  .ir-filter button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:#fff;border-radius:14px;padding:4px 10px;font-size:10.5px;color:var(--text)}
+  .ir-filter button .n{min-width:16px;height:16px;border-radius:8px;background:var(--row-alt);display:grid;place-items:center;font-size:9.5px;font-weight:700;padding:0 4px}
+  .ir-filter button.on{border-color:var(--primary);background:var(--primary-50);color:var(--primary-600);font-weight:600}
+  .ir-filter button.on .n{background:var(--primary);color:#fff}
+  .ir-filter button:disabled{opacity:.45;cursor:default}
+  .ir-filter .hint{font-size:10px;color:var(--muted);align-self:center;margin-left:4px}
+  .stage-sub{font-size:9.5px;color:var(--muted);margin-top:3px}
   .irg-table .irg-mcs{max-width:240px;white-space:normal;line-height:1.5}
   .irg-modal{width:min(1180px,100%)}
   .irg-modal .modal-body{max-height:76vh}
@@ -1997,14 +2005,25 @@ pos[0].lines[0].mcOpen = true;
 const MC_STORE = 'bajel.mc.v1';
 const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 function saveMcs() {
-  const data = {};
+  const data = {}, meta = {};
   pos.forEach(po => {
+    // a PO with any Manufacturing Clearance is published to the Vendor Portal with everything the vendor needs to see
+    if (po.lines.some(l => l.mcs.length)) {
+      const [vName, vGstin, vAddr, vPhone, vEmail] = PO_VENDORS[po.vendor];
+      const off = offices.find(o => o.name === po.office);
+      meta[po.number] = { id: po.id, number: po.number, status: po.status, currency: po.currency, title: po.title,
+        created: isoDay(po.created), endDate: isoDay(po.endDate),
+        vendor: { name: vName, gstin: vGstin, address: vAddr, phone: vPhone, email: vEmail || '' },
+        office: { name: po.office, address: off?.address || '', gstin: off?.gstin || '' },
+        lines: po.lines.map(l => ({ code: l.code, ref: l.ref, desc: l.desc, hsn: l.hsn, unit: l.unit, qty: l.qty, price: l.price, gst: l.gst,
+          delivered: l.delivered, invoiced: l.invoiced, productCode: l.productCode })) };
+    }
     data[po.number] = {};
     po.lines.forEach(l => { if (l.mcs.length) data[po.number][l.ref] = l.mcs.map(m => ({ id: m.id, qty: m.qty, unit: l.unit,
       office: m.office, officeName: officeName(m.office), address: officeById(m.office)?.address || '',
       date: isoDay(m.date), createdAt: m.createdAt.toISOString(), by: m.by, status: m.status })); });
   });
-  try { localStorage.setItem(MC_STORE, JSON.stringify({ savedAt: new Date().toISOString(), seq: mcSeq, pos: data })); } catch (e) {}
+  try { localStorage.setItem(MC_STORE, JSON.stringify({ savedAt: new Date().toISOString(), seq: mcSeq, pos: data, meta })); } catch (e) {}
 }
 (function restoreMcs() {
   let saved = null;
@@ -2023,6 +2042,7 @@ function saveMcs() {
       l.mcOpen = l.mcs.length > 0;
     });
   });
+  saveMcs(); // re-publish so the Vendor Portal always has the current PO details
 })();
 
 /* line-item table pieces */
@@ -2049,10 +2069,16 @@ function mcCheckCell(l, i) {
    The buyer sees them under each MC and records the inspection result (accepted + rejected = IR qty). */
 const IR_STORE = 'bajel.ir.v1';
 let irMem = [];
-const readIRs = () => { try { const v = localStorage.getItem(IR_STORE); return v ? JSON.parse(v).irs || [] : irMem; } catch (e) { return irMem; } };
+/* IR lifecycle: Pending (vendor raised) → Report Pending (approver approved; Record Inspection unlocked)
+   → Ready to Dispatch (buyer recorded the inspection; Rejected when nothing was accepted) */
+const IR_LEGACY = { 'Inspection Pending':'Pending', 'Accepted':'Ready to Dispatch', 'Partially Accepted':'Ready to Dispatch' };
+const normIR = r => (IR_LEGACY[r.status] ? { ...r, status: IR_LEGACY[r.status] } : r);
+const readIRs = () => { try { const v = localStorage.getItem(IR_STORE); return (v ? JSON.parse(v).irs || [] : irMem).map(normIR); } catch (e) { return irMem.map(normIR); } };
+const isRecorded = r => r.status === 'Ready to Dispatch' || r.status === 'Rejected';
+const IR_APPROVER = 'Priya Sharma (Approver)';
 const writeIRs = irs => { irMem = irs; try { localStorage.setItem(IR_STORE, JSON.stringify({ irs })); } catch (e) {} };
 const irsOfMc = (po, m) => readIRs().filter(r => r.po === po.number && r.mcId === m.id);
-const IR_CHIP = { 'Inspection Pending':'amber', 'Accepted':'green', 'Partially Accepted':'blue', 'Rejected':'red' };
+const IR_CHIP = { 'Pending':'amber', 'Report Pending':'blue', 'Ready to Dispatch':'green', 'ASN Pending':'blue', 'ASN Submitted':'green', 'Rejected':'red' };
 const irChip = st => `<span class="chip ${IR_CHIP[st] || 'amber'}">${st}</span>`;
 const isoToDate = v => { const [y, m, d] = v.split('-').map(Number); return new Date(y, m - 1, d); };
 
@@ -2073,22 +2099,23 @@ function irRows(po, l, irs) {
   return `<table class="mini-table ir-table"><thead><tr><th>Inspection Request</th><th>Inspection Qty</th><th>Proposed Date</th><th>Raised On</th>
     <th>Accepted</th><th>Rejected</th><th>Status</th><th>Dispatch Request</th><th class="right">Action</th></tr></thead>
     <tbody>${irs.map(r => {
-      const done = r.status !== 'Inspection Pending', dr = drOfIr(po, irKey(r));
+      const done = isRecorded(r), dr = drOfIr(po, irKey(r));
       return `<tr><td><button class="mc-link" data-action="irg-open" data-irg="${esc(r.id)}" title="Open Inspection Request">${r.id}</button>${r.items > 1 ? `<div class="faint">Item ${r.item} of ${r.items} · merged IR</div>` : ''}</td><td>${fmtNum(r.qty)} ${l.unit}</td><td>${fmtD(isoToDate(r.inspDate))}</td><td>${fmtDT(new Date(r.createdAt))} · Vendor</td>
         <td>${done ? `<b style="color:var(--success)">${fmtNum(r.accepted)}</b>` : '<span class="faint">—</span>'}</td>
         <td>${done ? `<b style="color:${r.rejected ? 'var(--danger)' : 'inherit'}">${fmtNum(r.rejected)}</b>` : '<span class="faint">—</span>'}</td>
         <td>${irChip(r.status)}</td>
         <td>${dr ? `<button class="mc-link" data-action="dr-view" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}`
           : !done ? '<span class="faint">After inspection</span>' : r.accepted > 0 ? '<span class="faint">Not created</span>' : '<span class="faint">Nothing accepted</span>'}</td>
-        <td class="right"><span class="ir-actions">${!done
-          ? `<button class="btn btn-primary btn-xs" data-action="ir-record" data-ir="${irKey(r)}">${icon('check', 9, 2.4)} Record Inspection</button>`
+        <td class="right"><span class="ir-actions">${r.status === 'Pending'
+          ? `<button class="btn btn-primary btn-xs" data-action="ir-approve" data-irg="${esc(r.id)}">${icon('check', 9, 2.4)} Approve</button>`
+          : !done ? `<button class="btn btn-primary btn-xs" data-action="ir-record" data-ir="${irKey(r)}">${icon('check', 9, 2.4)} Record Inspection</button>`
           : `<button class="btn btn-ghost btn-xs" data-action="ir-view" data-ir="${irKey(r)}">${icon('eye', 9, 2)} View</button>${!dr && r.accepted > 0
             ? `<button class="btn btn-primary btn-xs" data-action="dr-create" data-ir="${irKey(r)}">${icon('plus', 9, 2.6)} Create Dispatch Request</button>` : ''}`}</span></td></tr>`;
     }).join('')}</tbody></table>`;
 }
 function mcRow(po, l, i) {
   const alloc = mcAllocated(l), pct = Math.min(100, l.qty ? alloc / l.qty * 100 : 0);
-  const pend = l.mcs.reduce((a, m) => a + irsOfMc(po, m).filter(r => r.status === 'Inspection Pending').length, 0);
+  const pend = l.mcs.reduce((a, m) => a + irsOfMc(po, m).filter(r => !isRecorded(r)).length, 0);
   return `<tr class="ship-row"><td colspan="11">
     <div class="mc-head">
       <button class="link-btn strong" data-action="mc-toggle" data-i="${i}">MANUFACTURING CLEARANCE (${l.mcs.length}) ${icon(l.mcOpen ? 'chevUp' : 'eye', 10, 2)}</button>
@@ -2124,11 +2151,35 @@ function irGroupsOf(po) {
     .sort((a, b) => new Date(b.items[0].createdAt) - new Date(a.items[0].createdAt));
 }
 function irOverall(items) {
-  const pend = items.filter(r => r.status === 'Inspection Pending').length;
-  if (pend === items.length) return 'Inspection Pending';
-  if (pend) return 'Partially Inspected';
-  const acc = items.reduce((a, r) => a + (r.accepted || 0), 0), rej = items.reduce((a, r) => a + (r.rejected || 0), 0);
-  return !rej ? 'Accepted' : !acc ? 'Rejected' : 'Partially Accepted';
+  if (items.some(r => r.status === 'Pending')) return 'Pending';
+  if (items.some(r => r.status === 'Report Pending')) return 'Report Pending';
+  return items.some(r => r.status === 'Ready to Dispatch') ? 'Ready to Dispatch' : 'Rejected';
+}
+/* filter stage: once Ready to Dispatch, how far dispatch has got (what the buyer / supplier has to do next) */
+const IR_STAGES = [
+  ['Pending', 'Awaiting approver'], ['Report Pending', 'Approved · record the inspection'], ['Ready to Dispatch', 'Inspected · create Dispatch Request'],
+  ['ASN Pending', 'Supplier to submit ASN'], ['ASN Submitted', 'Supplier to raise invoice'], ['Rejected', 'Nothing accepted'] ];
+function irStage(po, items) {
+  const st = irOverall(items);
+  if (st !== 'Ready to Dispatch') return st;
+  const live = items.filter(r => r.status === 'Ready to Dispatch' && r.accepted > 0), drs = live.map(r => drOfIr(po, irKey(r)));
+  if (drs.some(d => !d)) return 'Ready to Dispatch';
+  return drs.some(d => d.status !== 'ASN Created') ? 'ASN Pending' : 'ASN Submitted';
+}
+function approveIrGroup(po, id) {
+  const items = readIRs().filter(r => r.po === po.number && r.id === id);
+  if (!items.length || !items.every(r => r.status === 'Pending')) return toast(`${id} is not awaiting approval`);
+  confirmBox({ title: `Approve ${id}`, confirmLabel: 'Approve',
+    message: `Approve <b>${esc(id)}</b> (${items.length} item${items.length > 1 ? 's' : ''}, ${unitTotals(items, r => r.qty)}) for inspection?
+      Its status changes to <b>Report Pending</b> and Record Inspection becomes available.`,
+    onConfirm: () => {
+      const all = readIRs(), at = new Date().toISOString();
+      all.forEach(r => { if (r.po === po.number && r.id === id) Object.assign(r, { status: 'Report Pending', approvedAt: at, approvedBy: IR_APPROVER }); });
+      writeIRs(all);
+      po.timeline.push({ title: 'Inspection Request Approved', by: `${id} by ${IR_APPROVER}`, at: new Date() });
+      poLog(po, `${id} approved by ${IR_APPROVER}`);
+      rerenderPO(); toast(`${id} approved · status Report Pending`);
+    } });
 }
 const unitTotals = (items, f) => {
   const u = {};
@@ -2145,17 +2196,25 @@ function findMcOf(po, mcId) {
 
 function irSectionHtml(po) {
   const groups = irGroupsOf(po);
-  const pending = groups.filter(g => g.items.some(r => r.status === 'Inspection Pending')).length;
   const dash = '<span class="faint">—</span>';
+  groups.forEach(g => g.stage = irStage(po, g.items));
+  const f = ui.irFilter || 'All', count = st => groups.filter(g => g.stage === st).length;
+  const shown = f === 'All' ? groups : groups.filter(g => g.stage === f);
+  const actionable = count('ASN Pending') + count('ASN Submitted');
   return `<section data-spy="inspection">
     <div class="po-sec-title">Inspection Requests
       ${groups.length ? `<span class="chip gray">${groups.length}</span>` : ''}
-      ${pending ? `<span class="chip amber">${pending} awaiting inspection result</span>` : ''}</div>
-    ${groups.length ? `<div class="po-box"><div class="table-wrap"><table class="mini-table po-mini irg-table">
+      ${actionable ? `<span class="chip blue">${actionable} need${actionable === 1 ? 's' : ''} supplier ASN / invoice</span>` : ''}</div>
+    ${groups.length ? `<div class="ir-filter" role="group" aria-label="Filter by status">
+      <button class="${f === 'All' ? 'on' : ''}" data-action="ir-filter" data-st="All">All <span class="n">${groups.length}</span></button>
+      ${IR_STAGES.map(([st, hint]) => `<button class="${f === st ? 'on' : ''}" data-action="ir-filter" data-st="${st}" title="${hint}" ${count(st) || f === st ? '' : 'disabled'}>${st} <span class="n">${count(st)}</span></button>`).join('')}
+    </div>` : ''}
+    ${groups.length && !shown.length ? emptyBox(`No Inspection Requests with status ${f}`) : ''}
+    ${shown.length ? `<div class="po-box"><div class="table-wrap"><table class="mini-table po-mini irg-table">
       <thead><tr><th>Inspection Request</th><th>Items</th><th>Manufacturing Clearances</th><th>Line Items</th><th>Inspection Qty</th>
         <th>Accepted</th><th>Rejected</th><th>Proposed Date</th><th>Status</th><th class="right">Action</th></tr></thead>
-      <tbody>${groups.map(({ id, items }) => {
-        const r0 = items[0], any = items.some(r => r.status !== 'Inspection Pending'), open = items.some(r => r.status === 'Inspection Pending');
+      <tbody>${shown.map(({ id, items, stage }) => {
+        const r0 = items[0], any = items.some(isRecorded), st = irOverall(items);
         return `<tr>
           <td><button class="mc-link" data-action="irg-open" data-irg="${esc(id)}">${esc(id)} ${icon('chevRight', 9, 2.6)}</button><div class="faint">${fmtDT(new Date(r0.createdAt))}</div></td>
           <td>${items.length}</td>
@@ -2165,11 +2224,13 @@ function irSectionHtml(po) {
           <td style="color:var(--success)">${any ? `<b>${unitTotals(items, r => r.accepted)}</b>` : dash}</td>
           <td>${any ? unitTotals(items, r => r.rejected) : dash}</td>
           <td>${fmtD(isoToDate(r0.inspDate))}</td>
-          <td>${irChip(irOverall(items))}</td>
-          <td class="right"><button class="btn ${open ? 'btn-primary' : 'btn-outline'} btn-xs" data-action="irg-open" data-irg="${esc(id)}">
-            ${open ? `${icon('check', 9, 2.4)} Record Inspection` : `${icon('eye', 9, 2)} View`}</button></td></tr>`;
+          <td>${irChip(st)}${stage !== st ? `<div class="stage-sub">${irChip(stage)}</div>` : ''}</td>
+          <td class="right">${st === 'Pending'
+            ? `<button class="btn btn-primary btn-xs" data-action="ir-approve" data-irg="${esc(id)}">${icon('check', 9, 2.4)} Approve</button>`
+            : `<button class="btn ${st === 'Report Pending' || stage === 'Ready to Dispatch' ? 'btn-primary' : 'btn-outline'} btn-xs" data-action="irg-open" data-irg="${esc(id)}">
+            ${st === 'Report Pending' ? `${icon('check', 9, 2.4)} Record Inspection` : stage === 'Ready to Dispatch' ? `${icon('plus', 9, 2.6)} Dispatch` : `${icon('eye', 9, 2)} View`}</button>`}</td></tr>`;
       }).join('')}</tbody></table></div></div>`
-    : emptyBox('No Inspection Requests raised by the vendor yet')}
+    : groups.length ? '' : emptyBox('No Inspection Requests raised by the vendor yet')}
   </section>`;
 }
 
@@ -2179,7 +2240,7 @@ function openIrGroup(po, id) {
   const g = irGroupsOf(po).find(x => x.id === id);
   if (!g) { ui.irGroupOpen = null; return toast(`${id} no longer exists`); }
   ui.irGroupOpen = id;
-  const items = g.items, r0 = items[0], done = items.filter(r => r.status !== 'Inspection Pending');
+  const items = g.items, r0 = items[0], done = items.filter(isRecorded), stOverall = irOverall(items), stage = irStage(po, items);
   const drs = items.map(r => drOfIr(po, irKey(r))).filter(Boolean);
   const byLine = new Map();
   items.forEach(r => {
@@ -2188,8 +2249,9 @@ function openIrGroup(po, id) {
     if (!byLine.has(k)) byLine.set(k, { l, i: f?.i ?? po.lines.indexOf(l), rows: [] });
     byLine.get(k).rows.push({ r, f });
   });
-  const tl = [{ at: new Date(r0.createdAt), t: 'Inspection Request raised', d: `${r0.by || PO_VENDORS[po.vendor][0]} · ${items.length} item${items.length > 1 ? 's' : ''}` }];
-  done.forEach(r => tl.push({ at: r.inspectedAt ? isoToDate(r.inspectedAt) : new Date(r0.createdAt), t: `Item ${r.item || 1} (${r.mcId}) inspected · ${r.status}`,
+  const tl = [{ at: new Date(r0.createdAt), t: 'Inspection Request raised · Pending', d: `${r0.by || PO_VENDORS[po.vendor][0]} · ${items.length} item${items.length > 1 ? 's' : ''}` }];
+  if (r0.approvedAt) tl.push({ at: new Date(r0.approvedAt), t: 'Approved · Report Pending', d: r0.approvedBy || IR_APPROVER });
+  done.forEach(r => tl.push({ at: r.inspectedAt ? isoToDate(r.inspectedAt) : new Date(r0.createdAt), t: `Item ${r.item || 1} (${r.mcId}) inspection recorded · ${r.status}`,
     d: `${fmtNum(r.accepted)} accepted · ${fmtNum(r.rejected)} rejected${r.inspector ? ` · ${r.inspector}` : ''}` }));
   drs.forEach(d => { tl.push({ at: new Date(d.createdAt), t: `${d.id} created`, d: `${fmtNum(d.qty)}${d.unit ? ` ${d.unit}` : ''}${d.shipTo ? ` to ${d.shipTo}` : ''}` });
     if (d.asn) tl.push({ at: new Date(d.asn.createdAt), t: `${d.asn.id} created by vendor`, d: [d.asn.invoiceNo && `Invoice ${d.asn.invoiceNo}`, d.asn.transporter, d.asn.vehicle].filter(Boolean).join(' · ') }); });
@@ -2203,13 +2265,14 @@ function openIrGroup(po, id) {
     <div class="modal-body">
       <div class="irg-sec">Summary</div>
       <div class="ir-kv" style="grid-template-columns:repeat(4,1fr)">
-        <div><div class="k">Status</div><div class="v">${irChip(irOverall(items))}</div></div>
+        <div><div class="k">Status</div><div class="v">${irChip(stOverall)}${stage !== stOverall ? ` ${irChip(stage)}` : ''}</div></div>
         <div><div class="k">PO Number</div><div class="v">${esc(po.number)}</div></div>
         <div><div class="k">Billing Location</div><div class="v">${esc(po.office)}</div></div>
         <div><div class="k">Raised On</div><div class="v">${fmtDT(new Date(r0.createdAt))}</div></div>
         <div><div class="k">Raised By</div><div class="v">${esc(r0.by || PO_VENDORS[po.vendor][0])}</div></div>
         <div><div class="k">Proposed Inspection Date</div><div class="v">${fmtD(isoToDate(r0.inspDate))}</div></div>
         <div><div class="k">Items / MCs / Line Items</div><div class="v">${items.length} / ${new Set(items.map(r => r.mcId)).size} / ${byLine.size}</div></div>
+        <div><div class="k">Approved</div><div class="v">${r0.approvedAt ? `${fmtDT(new Date(r0.approvedAt))}<div class="small muted" style="font-weight:400">${esc(r0.approvedBy || IR_APPROVER)}</div>` : '<span class="faint">Awaiting approver</span>'}</div></div>
         <div><div class="k">Inspected Items</div><div class="v">${done.length} of ${items.length}</div></div>
       </div>
       <div class="ir-strip irg-strip">
@@ -2240,7 +2303,7 @@ function openIrGroup(po, id) {
           <thead><tr><th>Item</th><th>MC ID</th><th>MC Cleared Qty</th><th>Shipping Location</th><th>Earliest Delivery</th><th>MC Released On</th>
             <th>Inspection Qty</th><th>Accepted</th><th>Rejected</th><th>Status</th><th>Inspection</th><th>Dispatch Request / ASN</th><th class="right">Action</th></tr></thead>
           <tbody>${rows.map(({ r, f }) => {
-            const m = f?.m, o = m && officeById(m.office), dr = drOfIr(po, irKey(r)), insp = r.status !== 'Inspection Pending';
+            const m = f?.m, o = m && officeById(m.office), dr = drOfIr(po, irKey(r)), insp = isRecorded(r);
             return `<tr>
               <td>${r.item || 1}</td><td><b>${esc(r.mcId)}</b></td>
               <td>${m ? fmtNum(m.qty) : dash}</td>
@@ -2251,10 +2314,11 @@ function openIrGroup(po, id) {
               <td>${insp ? `<b style="color:${r.rejected ? 'var(--danger)' : 'inherit'}">${fmtNum(r.rejected)}</b>` : dash}</td>
               <td>${irChip(r.status)}</td>
               <td class="wrap">${insp ? `${r.inspectedAt ? fmtD(isoToDate(r.inspectedAt)) : ''}${r.inspector ? `<div class="faint">${esc(r.inspector)}</div>` : ''}${r.inspRemarks ? `<div class="faint">“${esc(r.inspRemarks)}”</div>` : ''}`
-                : '<span class="faint">Awaiting inspection</span>'}</td>
+                : `<span class="faint">${r.status === 'Pending' ? 'Awaiting approval' : 'Awaiting inspection report'}</span>`}</td>
               <td class="wrap">${dr ? `<button class="mc-link" data-action="dr-view" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}${dr.asn ? `<div class="faint">${esc(dr.asn.id)}${dr.asn.vehicle ? ` · ${esc(dr.asn.vehicle)}` : ''}</div>` : ''}`
                 : insp ? (r.accepted > 0 ? '<span class="faint">Not created</span>' : '<span class="faint">Nothing accepted</span>') : dash}</td>
-              <td class="right">${!insp ? `<button class="btn btn-primary btn-xs" data-action="ir-record" data-ir="${irKey(r)}">${icon('check', 9, 2.4)} Record Inspection</button>`
+              <td class="right">${r.status === 'Pending' ? '<span class="faint">Approve first</span>'
+                : !insp ? `<button class="btn btn-primary btn-xs" data-action="ir-record" data-ir="${irKey(r)}">${icon('check', 9, 2.4)} Record Inspection</button>`
                 : !dr && r.accepted > 0 ? `<button class="btn btn-primary btn-xs" data-action="dr-create" data-ir="${irKey(r)}">${icon('plus', 9, 2.6)} Create Dispatch Request</button>`
                 : `<button class="btn btn-ghost btn-xs" data-action="ir-view" data-ir="${irKey(r)}">${icon('eye', 9, 2)} View</button>`}</td></tr>`;
           }).join('')}</tbody></table></div></div>`).join('')}
@@ -2264,6 +2328,7 @@ function openIrGroup(po, id) {
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" data-irg-csv>${icon('download', 10, 2.2)} Download</button>
+      ${stOverall === 'Pending' ? `<button class="btn btn-primary" data-action="ir-approve" data-irg="${esc(id)}">${icon('check', 10, 2.4)} Approve Inspection Request</button>` : ''}
       <button class="btn btn-primary" data-irg-close>Close</button></div>
   </div>`;
   document.body.appendChild(ov);
@@ -2302,7 +2367,7 @@ function openMcView(po, i, k) {
       </div>
       <div class="ir-strip">
         <div><div class="k">Cleared Qty</div><div class="v">${fmtNum(m.qty)} ${l.unit}</div></div>
-        <div><div class="k">Under Inspection</div><div class="v">${fmtNum(sum(r => r.status === 'Inspection Pending' ? r.qty : 0))}</div></div>
+        <div><div class="k">Under Inspection</div><div class="v">${fmtNum(sum(r => !isRecorded(r) ? r.qty : 0))}</div></div>
         <div><div class="k">Accepted / Rejected</div><div class="v"><span style="color:var(--success)">${fmtNum(sum(r => r.accepted))}</span> / <span style="color:${sum(r => r.rejected) ? 'var(--danger)' : 'inherit'}">${fmtNum(sum(r => r.rejected))}</span></div></div>
         <div><div class="k">In Dispatch Requests</div><div class="v">${fmtNum(dispatched)}</div></div>
       </div>
@@ -2434,6 +2499,8 @@ function openIrRecord(po, irId) {
   closeMenu();
   const r = readIRs().find(x => irKey(x) === irId);
   if (!r) return toast('Inspection request not found');
+  if (r.status === 'Pending') return toast(`${r.id} must be approved before the inspection can be recorded`);
+  if (r.status !== 'Report Pending') return toast(`Inspection for ${irLabel(r)} is already recorded`);
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<form class="modal" style="width:560px" novalidate>
@@ -2473,7 +2540,7 @@ function openIrRecord(po, irId) {
     const { a, j } = vals();
     const all = readIRs(), x = all.find(y => irKey(y) === irId);
     Object.assign(x, { accepted: r2(a), rejected: r2(j), inspectedAt: f.date.value, inspector: f.by.value.trim(),
-      inspRemarks: f.remarks.value.trim(), status: j === 0 ? 'Accepted' : a === 0 ? 'Rejected' : 'Partially Accepted' });
+      inspRemarks: f.remarks.value.trim(), status: a > 0 ? 'Ready to Dispatch' : 'Rejected' });
     writeIRs(all);
     po.timeline.push({ title: 'Inspection Completed', by: `${x.id}: ${fmtNum(a)} accepted, ${fmtNum(j)} rejected`, at: new Date() });
     poLog(po, `${x.id} inspected: ${fmtNum(a)} accepted, ${fmtNum(j)} rejected`);
@@ -2628,6 +2695,8 @@ const MC_ACTIONS = {
   'dr-view': el => openDrView(currentPO(), el.dataset.dr),
   'ir-view': el => openIrView(currentPO(), el.dataset.ir),
   'irg-open': el => openIrGroup(currentPO(), el.dataset.irg),
+  'ir-approve': el => approveIrGroup(currentPO(), el.dataset.irg),
+  'ir-filter': el => { ui.irFilter = el.dataset.st; rerenderPO(); },
   'mc-toggle': el => { const l = currentPO().lines[+el.dataset.i]; l.mcOpen = !l.mcOpen; rerenderPO(); },
   'mc-del': el => {
     const po = currentPO(), l = po.lines[+el.dataset.i], m = l.mcs[+el.dataset.k];
