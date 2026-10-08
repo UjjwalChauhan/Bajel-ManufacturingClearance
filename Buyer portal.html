@@ -2127,12 +2127,14 @@ const IR_CHIP = { 'Pending':'amber', 'Report Pending':'blue', 'Ready to Dispatch
   'Rejected':'red', 'Declined':'red', 'Withdrawn':'gray' };
 const irChip = st => `<span class="chip ${IR_CHIP[st] || 'amber'}">${st}</span>`;
 const isoToDate = v => { const [y, m, d] = v.split('-').map(Number); return new Date(y, m - 1, d); };
+/* approvers can waive inspection per IR item (r.waiveInspection); text for an approval entry that waived items */
+const waiveTxt = (h, n) => h?.waive ? ` · inspection waived (${h.waivedItems ? `${h.waivedItems.length} of ${n} item${n > 1 ? 's' : ''}` : 'all items'})` : '';
 /* where the IR sits in approval / why it closed — one muted line under the status chip */
 function apprNote(r) {
   const a = r.appr;
-  const waived = (a?.history || []).find(h => h.waive);
-  if (r.status === 'Pending' && a) return `<div class="stage-sub">${a.state === 'hold' ? 'On hold with' : 'Approval with'} ${esc(apprName(a.chain[a.level]))} · ${a.level + 1}/${a.chain.length}${waived ? ' · inspection waived' : ''}</div>`;
-  if (r.inspectionWaived) return `<div class="stage-sub">Inspection waived by ${esc(apprName(waived?.by) || 'approver')}</div>`;
+  const waived = r.waiveInspection;
+  if (r.status === 'Pending' && a) return `<div class="stage-sub">${a.state === 'hold' ? 'On hold with' : 'Approval with'} ${esc(apprName(a.chain[a.level]))} · ${a.level + 1}/${a.chain.length}${waived ? ' · inspection waived for this item' : ''}</div>`;
+  if (r.inspectionWaived) return `<div class="stage-sub">Inspection waived by ${esc(apprName(waived?.by) || 'approver')} · rejected fixed at 0</div>`;
   if (r.status === 'Declined') return `<div class="stage-sub">by ${esc(r.declinedBy || 'approver')}${r.declineReason ? ` · “${esc(r.declineReason)}”` : ''}</div>`;
   if (r.status === 'Withdrawn') return `<div class="stage-sub">by vendor${r.withdrawReason ? ` · “${esc(r.withdrawReason)}”` : ''}</div>`;
   return '';
@@ -2387,7 +2389,7 @@ function openIrGroup(po, id) {
   });
   const tl = [{ at: new Date(r0.createdAt), t: 'Inspection Request raised · sent for approval', d: `${r0.by || PO_VENDORS[po.vendor][0]} · ${items.length} item${items.length > 1 ? 's' : ''}` }];
   const VERB = { approved: 'Approved', declined: 'Declined', hold: 'Put on hold', unhold: 'Hold released' };
-  (a?.history || []).forEach(h => tl.push({ at: new Date(h.at), t: `${VERB[h.t] || h.t}${h.waive ? ' · inspection waived' : ''} by ${apprName(h.by)}`, d: `${APPROVERS[h.by]?.role || ''}${h.note ? ` · “${h.note}”` : ''}` }));
+  (a?.history || []).forEach(h => tl.push({ at: new Date(h.at), t: `${VERB[h.t] || h.t}${waiveTxt(h, items.length)} by ${apprName(h.by)}`, d: `${APPROVERS[h.by]?.role || ''}${h.note ? ` · “${h.note}”` : ''}` }));
   if (r0.withdrawnAt) tl.push({ at: new Date(r0.withdrawnAt), t: 'Withdrawn by vendor', d: r0.withdrawReason || '' });
   done.forEach(r => tl.push({ at: r.inspectedAt ? isoToDate(r.inspectedAt) : new Date(r0.createdAt), t: `Item ${r.item || 1} (${r.mcId}) inspection ${r.inspectionWaived ? 'waived' : 'recorded'} · ${r.status}`,
     d: `${fmtNum(r.accepted)} accepted · ${fmtNum(r.rejected)} rejected${r.inspector ? ` · ${r.inspector}` : ''}` }));
@@ -2670,6 +2672,7 @@ function openIrRecord(po, irId) {
   if (!r) return toast('Inspection request not found');
   if (r.status === 'Pending') return toast(`${r.id} is still in approval on the Employee Portal`);
   if (r.status !== 'Report Pending') return toast(`${irLabel(r)} can't be inspected (status ${r.status})`);
+  const waived = !!(r.waiveInspection || r.inspectionWaived);
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<form class="modal" style="width:560px" novalidate>
@@ -2677,8 +2680,9 @@ function openIrRecord(po, irId) {
       <button type="button" class="kebab x" data-close>${icon('x', 14)}</button></div>
     <div class="modal-body">${irDetailsHtml(po, r)}
       <div class="form-grid" style="margin-top:0">
-        <div class="field"><label>Accepted Qty *</label><input class="input" name="accepted" type="number" min="0" step="any" value="${r.qty}"></div>
-        <div class="field"><label>Rejected Qty *</label><input class="input" name="rejected" type="number" min="0" step="any" value="0"></div>
+        ${waived ? `<div class="field" style="grid-column:1/-1"><div class="ir-sum ok" style="margin:0">Inspection waived by ${esc(apprName(r.waiveInspection?.by) || 'the approver')} — the full inspection quantity is accepted and rejected quantity is fixed at 0.</div></div>` : ''}
+        <div class="field"><label>Accepted Qty *</label><input class="input" name="accepted" type="number" min="0" step="any" value="${r.qty}" ${waived ? 'readonly' : ''}></div>
+        <div class="field"><label>Rejected Qty *</label><input class="input" name="rejected" type="number" min="0" step="any" value="0" ${waived ? 'disabled title="Inspection waived — rejected quantity is fixed at 0"' : ''}></div>
         <div class="field"><label>Inspected On *</label><input class="input" name="date" type="date" value="${todayISO()}"></div>
         <div class="field"><label>Inspected By *</label><input class="input" name="by" value="Rohit Verma (QA)"></div>
         <div class="field" style="grid-column:1/-1"><label>Inspection Remarks</label><textarea class="input" name="remarks" rows="2" style="height:auto;padding:8px 9px" placeholder="Reason for rejection, observations"></textarea></div>
@@ -2706,7 +2710,7 @@ function openIrRecord(po, irId) {
   f.addEventListener('submit', e => {
     e.preventDefault();
     if (!check() || !f.date.value || !f.by.value.trim()) { if (!f.date.value || !f.by.value.trim()) toast('Inspected On and Inspected By are required'); return; }
-    const { a, j } = vals();
+    const { a, j } = waived ? { a: r.qty, j: 0 } : vals();
     const all = readIRs(), x = all.find(y => irKey(y) === irId);
     Object.assign(x, { accepted: r2(a), rejected: r2(j), inspectedAt: f.date.value, inspector: f.by.value.trim(),
       inspRemarks: f.remarks.value.trim(), status: a > 0 ? 'Ready to Dispatch' : 'Rejected' });

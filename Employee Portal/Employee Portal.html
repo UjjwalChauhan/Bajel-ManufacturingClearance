@@ -285,6 +285,19 @@
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chips button{border:1px solid var(--border);background:#fff;border-radius:14px;padding:4px 10px;font-size:11.5px}
   .chips button:hover{border-color:var(--primary);color:var(--primary)}
+  .modal.wide{width:min(820px,100%)}
+  .wv-table{width:100%;border-collapse:collapse;font-size:12.5px;border:1px solid var(--border)}
+  .wv-table th{background:#F4F4F7;font-size:11px;font-weight:700;text-transform:uppercase;text-align:left;padding:10px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .wv-table td{padding:10px;border-bottom:1px solid var(--border);vertical-align:middle}
+  .wv-table tr.on td{background:#F3FAF5}
+  .wv-table tr.locked td{background:#F7F7FA;color:var(--muted)}
+  .wv-table .rej{width:64px;height:30px;border:1px solid var(--border);border-radius:4px;padding:0 8px;background:#EEEEF2;color:var(--muted);cursor:not-allowed}
+  .wv-table .wv-on{display:none}
+  .wv-table tr.on .wv-on,.wv-table tr.locked .wv-on{display:inline}
+  .wv-table tr.on .wv-off,.wv-table tr.locked .wv-off{display:none}
+  .wv-tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.2px;padding:3px 8px;border-radius:10px;text-transform:uppercase;white-space:nowrap}
+  .wv-tag.y{color:var(--success);background:var(--success-bg);border:1px solid #A9D6B9}
+  .wv-tag.n{color:var(--muted);background:#F1F1F4;border:1px solid var(--border)}
   .mini-list{font-size:12.5px;line-height:1.7;max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:5px;padding:8px 12px;margin-top:4px}
 
   /* ---------- Toast & FAB ---------- */
@@ -542,27 +555,40 @@ function irReqs() {
     return { id: `ir:${r0.po}:${r0.id}`, shared: true, irId: r0.id, type: 'ir', ref: r0.id, title: `Inspection · ${items.map(x => x.mcId).join(', ')}`,
       asker: pk, vendor: vk, office: r0.office, poNo: r0.po, chain: a.chain, level: a.level,
       status: r0.status === 'Withdrawn' ? 'withdrawn' : a.state, withdrawReason: r0.withdrawReason, received: new Date(r0.createdAt),
-      lines: items.map(x => ({ mc: x.mcId, code: x.lineCode, desc: x.lineDesc || '', loc: x.mcLocation, mcQty: x.mcQty, qty: x.qty, unit: x.unit || '' })),
+      lines: items.map(x => ({ item: x.item || 1, mc: x.mcId, code: x.lineCode, desc: x.lineDesc || '', loc: x.mcLocation, mcQty: x.mcQty, qty: x.qty, unit: x.unit || '' })),
       inspDate: new Date(r0.inspDate + 'T00:00'), location: r0.location, contact: `${r0.contact} · ${r0.phone}`, remarks: r0.remarks,
       files: (r0.docs || []).map(pdf), history, clar: (a.clar || []).map(c => ({ ...c, by: who(c.by), at: new Date(c.at) })) };
   });
 }
+/* Inspection can be waived per IR item. Each waive entry in the history lists the items it waived
+   (older entries without a list waived every item); item number → the approval entry that waived it */
+const lineNo = (l, i) => l.item || i + 1;
+function waivedMap(r) {
+  const m = new Map();
+  r.history.filter(h => h.waive).forEach(h => (h.waivedItems || r.lines.map(lineNo)).forEach(n => { if (!m.has(n)) m.set(n, h); }));
+  return m;
+}
+const waiveSummary = (h, r) => h.waivedItems ? `${h.waivedItems.length} of ${r.lines.length} item${r.lines.length > 1 ? 's' : ''}` : 'all items';
 /* write an approver's action on a shared IR back to every item of it; false if the vendor withdrew it meanwhile */
 function commitIR(r) {
   const out = by => by === r.asker ? 'vendor' : by;
   const all = readSharedIRs(), items = all.filter(x => x.po === r.poNo && x.id === r.irId);
   if (!items.length || items[0].status === 'Withdrawn') return false;
   const appr = { chain: r.chain, level: r.level, state: r.status,
-    history: r.history.filter(h => !['start', 'withdrawn'].includes(h.t)).map(h => ({ t: h.t, by: out(h.by), at: new Date(h.at).toISOString(), note: h.note || '', ...(h.waive ? { waive: true } : {}) })),
+    history: r.history.filter(h => !['start', 'withdrawn'].includes(h.t)).map(h => ({ t: h.t, by: out(h.by), at: new Date(h.at).toISOString(), note: h.note || '', ...(h.waive ? { waive: true, ...(h.waivedItems ? { waivedItems: h.waivedItems } : {}) } : {}) })),
     clar: r.clar.map(c => ({ by: out(c.by), at: new Date(c.at).toISOString(), text: c.text })) };
   const last = [...appr.history].reverse().find(h => h.t === 'approved' || h.t === 'declined');
+  const wm = waivedMap(r);
   items.forEach(x => {
     x.appr = appr;
-    const waived = appr.history.find(h => h.waive);
+    // waived items skip the inspection report: full IR qty accepted, rejected fixed at 0
+    const w = wm.get(x.item || 1);
+    if (w) x.waiveInspection = { by: out(w.by), at: new Date(w.at).toISOString(), note: w.note || '' };
+    else delete x.waiveInspection;
     if (r.status === 'approved' && x.status === 'Pending') {
       Object.assign(x, { status: 'Report Pending', approvedAt: last.at, approvedBy: `${P(last.by).name} (${P(last.by).role})` });
-      if (waived) Object.assign(x, { status: 'Ready to Dispatch', accepted: x.qty, rejected: 0, inspectedAt: last.at.slice(0, 10), inspectionWaived: true,
-        inspector: `Waived by ${P(waived.by).name}`, inspRemarks: waived.note });
+      if (w) Object.assign(x, { status: 'Ready to Dispatch', accepted: x.qty, rejected: 0, inspectedAt: last.at.slice(0, 10), inspectionWaived: true,
+        inspector: `Waived by ${P(w.by).name}`, inspRemarks: w.note });
     }
     if (r.status === 'declined') Object.assign(x, { status: 'Declined', declinedAt: last.at, declinedBy: P(last.by).name, declineReason: last.note });
   });
@@ -837,14 +863,15 @@ function leftPane(r) {
   if (r.type === 'ir') {
     return `<h2>Inspection Request · ${esc(r.ref)}</h2>
       ${r.status === 'withdrawn' ? `<div class="note">${icon('info', 18)}<span>Withdrawn by the vendor${r.withdrawReason ? ` — “${esc(r.withdrawReason)}”` : ''}. No action needed.</span></div>` : ''}
-      ${(w => w ? `<div class="note">${icon('info', 18)}<span>Inspection waived by ${esc(P(w.by).name)}${w.note ? ` — “${esc(w.note)}”` : ''}. After final approval the full quantity is accepted without an inspection report.</span></div>` : '')(r.history.find(h => h.waive))}
+      ${(wm => wm.size ? `<div class="note">${icon('info', 18)}<span>Inspection waived for <b>${wm.size} of ${r.lines.length}</b> item${r.lines.length > 1 ? 's' : ''}. ${r.status === 'approved' ? 'Waived items were' : 'After final approval, waived items are'} accepted in full with rejected quantity 0 and no inspection report${wm.size < r.lines.length ? '; the remaining items go to the buyer for inspection' : ''}.</span></div>` : '')(waivedMap(r))}
       <div class="note info">${icon('info', 18)}<span>Raised by the vendor on the Vendor Portal. Once every approver approves, Hindalco's buyer can record the inspection result and raise the Dispatch Request.</span></div>
       ${vendorBlock(r)}<hr class="hr">
       <div class="d-sec">Inspection Details</div>
       <div class="kv-grid">${kv('PO Number', esc(r.poNo))}${kv('Proposed Inspection Date', fDate(r.inspDate))}${kv('Inspection Location', esc(r.location), true)}${kv('Vendor Contact', esc(r.contact), true)}${r.remarks ? kv('Vendor Remarks', esc(r.remarks), true) : ''}</div>
       <hr class="hr"><div class="d-sec" style="margin-bottom:16px">Clearances offered for inspection (${r.lines.length})</div>
-      <table class="items"><thead><tr><th>MC ID</th><th>Item</th><th>Shipping Location</th><th>Cleared Qty</th><th>Inspection Qty</th></tr></thead><tbody>
-        ${r.lines.map(l => `<tr><td><b>${esc(l.mc)}</b></td><td class="l">${l.code ? `<b>${esc(l.code)}</b><br>` : ''}${esc(l.desc)}</td><td class="l">${esc(l.loc || '—')}</td><td>${l.mcQty != null ? `${num(l.mcQty)} ${esc(l.unit)}` : '—'}</td><td><b>${num(l.qty)} ${esc(l.unit)}</b></td></tr>`).join('')}
+      <table class="items"><thead><tr><th>MC ID</th><th>Item</th><th>Shipping Location</th><th>Cleared Qty</th><th>Inspection Qty</th><th>Inspection</th></tr></thead><tbody>
+        ${(wm => r.lines.map((l, i) => { const w = wm.get(lineNo(l, i)); return `<tr><td><b>${esc(l.mc)}</b></td><td class="l">${l.code ? `<b>${esc(l.code)}</b><br>` : ''}${esc(l.desc)}</td><td class="l">${esc(l.loc || '—')}</td><td>${l.mcQty != null ? `${num(l.mcQty)} ${esc(l.unit)}` : '—'}</td><td><b>${num(l.qty)} ${esc(l.unit)}</b></td>
+          <td>${w ? `<span class="wv-tag y">Waived</span><div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">by ${esc(P(w.by).name)}<br>Accepted ${num(l.qty)} · Rejected 0</div>` : '<span class="wv-tag n">Required</span>'}</td></tr>`; }).join(''))(waivedMap(r))}
       </tbody></table>
       ${filesBlock(r.files)}`;
   }
@@ -868,7 +895,9 @@ function rightApproval(r) {
   if (r.type === 'po') { key = ['PO Number', r.ref];
     fields = f('Category', esc(r.category)) + f('Order Id', esc(r.ref)) + f('Title', esc(r.title)) + f('Billing Address', esc(BILLING)) + f('Delivery Address', esc(OFFICES[r.office])) + f('Currency', 'INR') + f('Amount ( Incl. Tax )', num(amt)) + f('Raised By', esc(a.name)) + f('Vendor Name', esc(v.name)); }
   if (r.type === 'ir') { key = ['Inspection Request', r.ref];
-    fields = f('PO Number', esc(r.poNo)) + f('Clearances', r.lines.map(l => esc(l.mc)).join(', ')) + f('Inspection Qty', r.lines.map(l => `${num(l.qty)} ${esc(l.unit)}`).join(', ')) + f('Inspection Date', fDate(r.inspDate)) + f('Location', esc(r.location)) + f('Raised By', `${esc(a.name)} (Vendor)`) + f('Vendor Name', esc(v.name)); }
+    fields = f('PO Number', esc(r.poNo)) + f('Clearances', r.lines.map(l => esc(l.mc)).join(', ')) + f('Inspection Qty', r.lines.map(l => `${num(l.qty)} ${esc(l.unit)}`).join(', ')) + f('Inspection Date', fDate(r.inspDate)) + f('Location', esc(r.location))
+      + ((wm => wm.size ? f('Inspection Waived', `${wm.size} of ${r.lines.length} item${r.lines.length > 1 ? 's' : ''} · ${r.lines.filter((l, i) => wm.has(lineNo(l, i))).map(l => esc(l.mc)).join(', ')}`) : '')(waivedMap(r)))
+      + f('Raised By', `${esc(a.name)} (Vendor)`) + f('Vendor Name', esc(v.name)); }
   if (r.type === 'bg') { key = ['BG Number', r.ref.replace('BG/', '')];
     fields = f('Guarantee Type', esc(r.kind)) + f('Bank', esc(r.bank + ', ' + r.branch)) + f('Currency', 'INR') + f('Amount', num(r.amount)) + f('Against PO', esc(r.poNo)) + f('Raised By', esc(a.name)) + f('Vendor Name', esc(v.name)); }
 
@@ -897,7 +926,7 @@ function timelineItems(r) {
     const p = P(h.by);
     const n = out.length;
     if (h.t === 'start') out.push({ st:'done', lbl:'App Started', nm:`Submitted by ${p.name}`, ln:['Type: start', `Sent on : ${fTime(h.at)}`], tat });
-    if (h.t === 'approved') out.push({ st:'done', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, `Status: APPROVED${h.waive ? ' · INSPECTION WAIVED' : ''}`, `Actioned on : ${fTime(h.at)}`], tat, note:h.note });
+    if (h.t === 'approved') out.push({ st:'done', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, `Status: APPROVED${h.waive ? ` · INSPECTION WAIVED (${waiveSummary(h, r).toUpperCase()})` : ''}`, `Actioned on : ${fTime(h.at)}`], tat, note:h.note });
     if (h.t === 'declined') out.push({ st:'declined', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, 'Status: DECLINED', `Actioned on : ${fTime(h.at)}`], tat, note:h.note });
     if (h.t === 'hold') out.push({ st:'hold', lbl:'Put on Hold', nm:p.name, ln:[`Status: ON HOLD`, `On : ${fTime(h.at)}`], tat, note:h.note });
     if (h.t === 'unhold') out.push({ st:'done', lbl:'Hold Released', nm:p.name, ln:[`On : ${fTime(h.at)}`], tat, note:h.note });
@@ -950,7 +979,7 @@ function renderDrawer() {
   else if (canAct) foot = `
     <button class="act act-dec" data-act="decline">${icon('x', 18, 2)} Decline</button>
     <button class="act act-app" data-act="approve">${icon('check', 18, 2)} Approve</button>
-    ${r.type === 'ir' ? `<button class="act act-waive" data-act="waive" title="Approve without a physical inspection">Waive Inspection</button>` : ''}
+    ${r.type === 'ir' && waivedMap(r).size < r.lines.length ? `<button class="act act-waive" data-act="waive" title="Approve without a physical inspection">Waive Inspection</button>` : ''}
     ${r.status === 'hold' ? `<button class="act act-hold ${r.type === 'ir' ? '' : 'wide'}" data-act="unhold">${icon('play', 16, 2)} Release Hold</button>` : `<button class="act act-hold ${r.type === 'ir' ? '' : 'wide'}" data-act="hold">Hold Approval</button>`}`;
   else if (myAct) foot = `<div class="done-banner note ${myAct.t === 'declined' ? 'bad' : 'ok'}" style="margin:0">${icon(myAct.t === 'declined' ? 'x' : 'check', 18, 2)}<span>You ${myAct.t} this on ${fTime(myAct.at)}${r.status === 'pending' ? ` · now pending with ${esc(P(currentApprover(r)).name)}` : ''}</span></div>`;
   else if (r.asker === me) foot = `<div class="done-banner note info" style="margin:0">${icon('info', 18)}<span>${r.status === 'approved' ? 'Fully approved.' : r.status === 'declined' ? 'Declined.' : `Waiting on ${esc(P(currentApprover(r)).name)} (${r.status === 'hold' ? 'on hold' : 'level ' + (r.level + 1) + ' of ' + r.chain.length})`}</span></div>`;
@@ -988,26 +1017,51 @@ function renderModal() {
     hold: { h:'Hold Approval', p:'The request moves to your Hold tab. You can approve, decline or release it later.',
       body: `<div class="field" id="fNote"><label>Reason for hold <span class="req">*</span></label><textarea id="mNote" placeholder="e.g. Awaiting revised e-way bill from vendor"></textarea><span class="err">Please add a reason.</span></div>
         <div class="field"><label><input type="checkbox" class="chk" id="mAsk" checked style="vertical-align:-3px;margin-right:6px">Also send this as a clarification to the requester</label></div>`, btn:'Put on Hold', cls:'btn-primary' },
-    waive: { h:'Waive Inspection', p: `Approve this Inspection Request without a physical inspection. ${rs[0]?.level + 1 < rs[0]?.chain.length ? `It still goes to ${esc(P(rs[0].chain[rs[0].level + 1]).name)} for approval; after` : 'After'} the final approval the full inspection quantity is marked accepted and the request is Ready to Dispatch — no inspection report is recorded.`,
-      body: `<div class="field" id="fNote"><label>Reason for waiver <span class="req">*</span></label><textarea id="mNote" placeholder="e.g. Catalogue item, test certificate verified"></textarea><span class="err">Please add a reason.</span></div>
+    waive: { h:'Waive Inspection', wide:true, p: `Choose the items that don't need a physical inspection. ${rs[0]?.level + 1 < rs[0]?.chain.length ? `The request still goes to ${esc(P(rs[0].chain[rs[0].level + 1]).name)} for approval; after` : 'After'} the final approval each waived item is accepted in full with rejected quantity 0 and no inspection report. The other items go to the buyer for inspection.`,
+      body: `${waiveTable(rs[0])}<div class="field" id="fNote" style="margin-top:16px"><label>Reason for waiver <span class="req">*</span></label><textarea id="mNote" placeholder="e.g. Catalogue item, test certificate verified"></textarea><span class="err">Please add a reason.</span></div>
         <div class="chips">${['Catalogue item — test certificate verified','Repeat supply from approved vendor','Third-party inspection report accepted'].map(c => `<button data-mchip="${c}">${c}</button>`).join('')}</div>`, btn:'Approve & Waive Inspection', cls:'btn-primary' },
     unhold: { h:'Release Hold', p:'The request goes back to your Pending queue.', body:`<div class="field"><label>Comment (optional)</label><textarea id="mNote" placeholder="e.g. Corrected documents received"></textarea></div>`, btn:'Release Hold', cls:'btn-primary' },
   }[modal.kind];
-  return `<div class="overlay" data-act="m-close-bg"><div class="modal" role="dialog" aria-modal="true">
+  return `<div class="overlay" data-act="m-close-bg"><div class="modal ${M.wide ? 'wide' : ''}" role="dialog" aria-modal="true">
     <div class="modal-head"><h3>${M.h}</h3><p>${M.p}</p><button class="x" data-act="m-close" aria-label="Close">${icon('x', 20, 2.4)}</button></div>
     <div class="modal-body">${M.body}</div>
     <div class="modal-foot"><button class="btn ${M.cls}" data-act="m-confirm">${M.btn}</button></div>
   </div></div>`;
 }
 
+/* one row per IR item: tick to waive → Accepted = inspection qty, Rejected locked at 0. Items an earlier approver waived stay locked */
+function waiveTable(r) {
+  if (!r) return '';
+  const wm = waivedMap(r), open = r.lines.filter((l, i) => !wm.has(lineNo(l, i))).length;
+  return `<div class="field" id="fWv" style="margin-bottom:0"><div style="overflow-x:auto"><table class="wv-table"><thead><tr>
+      <th style="width:34px"><input type="checkbox" class="chk" data-wv-all ${open ? '' : 'disabled checked'} aria-label="Waive all items"></th>
+      <th>MC ID / Item</th><th>Inspection Qty</th><th>Accepted Qty</th><th>Rejected Qty</th><th>Inspection</th></tr></thead>
+    <tbody>${r.lines.map((l, i) => { const n = lineNo(l, i), w = wm.get(n); return `<tr class="${w ? 'locked' : ''}" data-wv-row="${n}">
+      <td><input type="checkbox" class="chk" data-wv="${n}" ${w ? 'checked disabled' : ''} aria-label="Waive inspection for ${esc(l.mc)}"></td>
+      <td><b>${esc(l.mc)}</b><div style="color:var(--muted);font-size:11.5px;margin-top:2px;max-width:260px">${l.code ? esc(l.code) + ' · ' : ''}${esc(l.desc)}</div></td>
+      <td><b>${num(l.qty)}</b> ${esc(l.unit)}</td>
+      <td><span class="wv-on"><b style="color:var(--success)">${num(l.qty)}</b> ${esc(l.unit)}</span><span class="wv-off" style="color:var(--muted)">From inspection</span></td>
+      <td><span class="wv-on"><input class="rej" value="0" disabled title="Rejected quantity is fixed at 0 for a waived item"></span><span class="wv-off" style="color:var(--muted)">From inspection</span></td>
+      <td>${w ? `<span class="wv-tag y">Waived</span><div style="font-size:11px;margin-top:4px">by ${esc(P(w.by).name)}</div>` : '<span class="wv-on"><span class="wv-tag y">Waived</span></span><span class="wv-off"><span class="wv-tag n">Required</span></span>'}</td></tr>`; }).join('')}</tbody></table></div>
+    <span class="err">Select at least one item to waive.</span></div>`;
+}
+function syncWaiveRows() {
+  document.querySelectorAll('[data-wv-row]').forEach(tr => { const c = tr.querySelector('[data-wv]'); if (!c.disabled) tr.classList.toggle('on', c.checked); });
+  const open = [...document.querySelectorAll('[data-wv]:not(:disabled)')], all = $('[data-wv-all]');
+  if (all && open.length) { all.checked = open.every(c => c.checked); all.indeterminate = !all.checked && open.some(c => c.checked); }
+  if (open.some(c => c.checked)) $('#fWv')?.classList.remove('invalid');
+}
+
 function confirmModal() {
   const note = ($('#mNote')?.value || '').trim();
+  const waivedItems = modal.kind === 'waive' ? [...document.querySelectorAll('[data-wv]:checked:not(:disabled)')].map(c => +c.dataset.wv) : [];
+  if (modal.kind === 'waive' && !waivedItems.length) { $('#fWv').classList.add('invalid'); return; }
   if ((modal.kind === 'decline' || modal.kind === 'hold' || modal.kind === 'waive') && !note) { $('#fNote').classList.add('invalid'); $('#mNote').focus(); return; }
   const now = new Date();
   const rs = modal.ids.map(id => findReq(id)).filter(Boolean);
   rs.forEach(r => {
     if (modal.kind === 'approve' || modal.kind === 'waive') {
-      r.history.push({ t:'approved', by:me, at:now, note, ...(modal.kind === 'waive' ? { waive:true } : {}) });
+      r.history.push({ t:'approved', by:me, at:now, note, ...(modal.kind === 'waive' ? { waive:true, waivedItems } : {}) });
       r.level++;
       r.status = r.level >= r.chain.length ? 'approved' : 'pending';
     } else if (modal.kind === 'decline') {
@@ -1027,7 +1081,7 @@ function confirmModal() {
   const n = rs.length, r0 = rs[0], kind = modal.kind;
   const msg = {
     approve: n > 1 ? `${n} requests approved` : r0.status === 'approved' ? `${r0.ref} approved` : `${r0.ref} approved · sent to ${P(currentApprover(r0)).name}`,
-    waive: r0.status === 'approved' ? `${r0.ref} approved · inspection waived, Ready to Dispatch` : `${r0.ref} approved with inspection waived · sent to ${P(currentApprover(r0)).name}`,
+    waive: `${r0.ref} approved · inspection waived for ${waivedItems.length} item${waivedItems.length > 1 ? 's' : ''}${r0.status === 'approved' ? '' : ` · sent to ${P(currentApprover(r0)).name}`}`,
     decline: n > 1 ? `${n} requests declined` : `${r0.ref} declined`,
     hold: `${r0.ref} moved to Hold`, unhold: `${r0.ref} moved back to Pending`,
   }[modal.kind];
@@ -1103,6 +1157,9 @@ document.addEventListener('click', e => {
   if (ps) { me = ps.dataset.persona; ui.pop = null; ui.sel.clear(); ui.open = null; save(); render(); toast(`Logged in as ${P(me).name}`, 'swap'); return; }
   const chip = t.closest('[data-chip]');
   if (chip) { const ta = $('#clarText'); ta.value = chip.dataset.chip + (chip.dataset.chip.endsWith('.') ? '' : '.'); ta.focus(); return; }
+  if (t.matches('[data-wv-all]')) { document.querySelectorAll('[data-wv]:not(:disabled)').forEach(c => c.checked = t.checked); syncWaiveRows(); return; }
+  if (t.matches('[data-wv]')) { syncWaiveRows(); return; }
+  if (t.closest('[data-wv-row]') && !t.closest('input')) { const c = t.closest('[data-wv-row]').querySelector('[data-wv]'); if (!c.disabled) { c.checked = !c.checked; syncWaiveRows(); } return; }
   const mchip = t.closest('[data-mchip]');
   if (mchip) { $('#mNote').value = mchip.dataset.mchip; $('#fNote')?.classList.remove('invalid'); return; }
 

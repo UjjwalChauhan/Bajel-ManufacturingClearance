@@ -771,11 +771,13 @@ function irSummary(m, irs) {
 }
 const isoD = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 const parseISO = v => { const [y, mo, d] = v.split('-').map(Number); return new Date(y, mo - 1, d); };
+/* approvers can waive inspection per IR item (r.waiveInspection); text for an approval entry that waived items */
+const waiveTxt = (h, n) => h?.waive ? ` · inspection waived (${h.waivedItems ? `${h.waivedItems.length} of ${n} item${n > 1 ? 's' : ''}` : 'all items'})` : '';
 /* where the IR is in approval / why it closed — one line under the status chip */
 function apprNote(r) {
-  const a = r.appr, waived = (a?.history || []).find(h => h.waive);
-  if (r.status === 'Pending' && a) return `<div class="appr-note">${a.state === 'hold' ? 'On hold with' : 'With'} ${apprName(a.chain[a.level])} · level ${a.level + 1} of ${a.chain.length}${waived ? ' · inspection waived' : ''}</div>`;
-  if (r.inspectionWaived) return `<div class="appr-note">Inspection waived by ${apprName(waived?.by)}</div>`;
+  const a = r.appr, waived = r.waiveInspection;
+  if (r.status === 'Pending' && a) return `<div class="appr-note">${a.state === 'hold' ? 'On hold with' : 'With'} ${apprName(a.chain[a.level])} · level ${a.level + 1} of ${a.chain.length}${waived ? ' · inspection waived for this item' : ''}</div>`;
+  if (r.inspectionWaived) return `<div class="appr-note">Inspection waived by ${apprName(waived?.by)} · rejected qty fixed at 0</div>`;
   if (r.status === 'Declined') return `<div class="appr-note">Declined by ${esc(r.declinedBy || 'approver')}${r.declineReason ? ` · “${esc(r.declineReason)}”` : ''}</div>`;
   if (r.status === 'Withdrawn') return `<div class="appr-note">Withdrawn ${r.withdrawnAt ? fmtD(new Date(r.withdrawnAt)) : ''}${r.withdrawReason ? ` · “${esc(r.withdrawReason)}”` : ''}</div>`;
   return '';
@@ -915,7 +917,7 @@ function irViewModal(o, id) {
     else if (stOverall === 'Pending' && i === a.level) { st = 'pending'; status = a.state === 'hold' ? 'ON HOLD' : 'PENDING ON APPROVER'; }
     else { st = 'upcoming'; status = stOverall === 'Withdrawn' || stOverall === 'Declined' ? 'NOT REQUIRED' : 'NOT STARTED'; }
     tl.push({ st, lb: `Approver ${i + 1}`, nm: `${apprName(k)} · ${APPROVERS[k]?.role || ''}`,
-      ln: ['Type: INSPECTION-REQUEST', `Status: ${status}${h?.waive ? ' · INSPECTION WAIVED' : ''}`, ...(h ? [`${h.t === 'approved' ? 'Approved' : 'Declined'} on: ${fmtDT(new Date(h.at))}`] : [])],
+      ln: ['Type: INSPECTION-REQUEST', `Status: ${status}${waiveTxt(h, items.length).toUpperCase()}`, ...(h ? [`${h.t === 'approved' ? 'Approved' : 'Declined'} on: ${fmtDT(new Date(h.at))}`] : [])],
       cmt: h?.note || (st === 'pending' && a.state === 'hold' ? hold?.note : '') });
   });
   if (stOverall === 'Withdrawn') tl.push({ st:'declined', lb:'Withdrawn', nm:`by ${r0.withdrawnBy || VENDOR.name}`, ln:[`On: ${fmtDT(new Date(r0.withdrawnAt))}`], cmt: r0.withdrawReason });
