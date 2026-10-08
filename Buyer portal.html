@@ -390,6 +390,25 @@
   .link-btn:hover{color:var(--primary)}
   .link-btn.strong{font-size:8.5px;letter-spacing:.03em}
   .ship-row td{background:#fff !important;padding:8px 14px !important}
+  /* line-item subsections: a thin tab strip under each line; one collapsible panel at a time */
+  .sub-row td{background:#fff !important;padding:6px 10px 6px 14px !important;border-top:1px solid #ECECEF}
+  .sub-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+  .sub-tab{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border:1px solid var(--border);border-radius:12px;background:#fff;
+    font-size:9.5px;font-weight:600;color:#44444C;letter-spacing:.02em;cursor:pointer}
+  .sub-tab:hover{border-color:var(--primary);color:var(--primary-600)}
+  .sub-tab .n{min-width:16px;height:16px;border-radius:8px;background:var(--row-alt);display:grid;place-items:center;font-size:9px;font-weight:700;padding:0 4px}
+  .sub-tab .h{font-weight:500;color:var(--muted);font-size:9px}
+  .sub-tab .h.warn{color:#8A6100}
+  .sub-tab.empty{color:var(--faint)}
+  .sub-tab.on{border-color:var(--primary);background:var(--primary-50);color:var(--primary-600)}
+  .sub-tab.on .n{background:var(--primary);color:#fff}
+  .sub-tab svg{flex:none}
+  .sub-panel{margin:8px 0 4px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:#FCFCFD}
+  .sub-panel .mc-head{margin-bottom:2px}
+  .sub-panel .mc-table,.sub-panel .ir-table{margin-top:8px;max-width:none}
+  .sub-panel .empty-note{padding:4px 0;font-size:10px;color:var(--faint)}
+  .lines-subbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px;font-size:10px;color:var(--muted)}
+  .lines-subbar .sub-tab{height:22px}
   .sum-table{width:100%;border-collapse:collapse;margin-top:10px;min-width:700px}
   .sum-table th{font-size:8.5px;font-weight:600;text-transform:uppercase;text-align:left;padding:10px 4px 18px;background:#EDEDEE;border-bottom:1px solid #D9D9DE}
   .sum-table td{font-size:9px;font-weight:600;text-transform:uppercase;padding:13px 4px;border-bottom:1px solid #E6E6EA}
@@ -492,6 +511,7 @@ const P = {
   wallet:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2M3 10h18"/>',
   userBox:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/>',
   box:'<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+  truck:'<path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
   scan:'<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M3 12h18"/>',
   store:'<path d="M4 7h16l-1 4H5zM5 11v9h14v-9M9 20v-5h6v5"/>',
   archive:'<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M10 13h4"/>',
@@ -1600,6 +1620,7 @@ function renderPODetail(id) {
           <div class="po-sec-title">Line Items ${editable ? `<button class="btn btn-primary btn-xs" data-action="po-short-close">Short Closure</button>` : ''}</div>
           <div class="po-sub-title" style="margin-top:0">As Per Purchase Order</div>
           ${editable ? mcSelectBar(po) : ''}
+          ${linesSubBar(po)}
           <div class="table-wrap"><table class="po-table">
             <thead><tr>${editable ? '<th class="mc-cell"></th>' : ''}<th style="width:20%">Details</th><th style="width:20%">Delivery Address ▲</th><th>Qty/Unit</th><th>Price/Unit</th><th>Delivered</th>
               <th>Invoice Qty</th><th>Balance Qty</th><th>GST</th><th>Amount</th><th>Action</th></tr></thead>
@@ -2018,7 +2039,7 @@ function officeOptions(selected) {
 /* demo data: the first PO's first line already has one clearance */
 pos[0].lines[0].mcs.push({ id: nextMcId(pos[0]), qty: 100, office: offices[2].id, date: new Date(2026, 9, 12),
   createdAt: new Date(2026, 9, 3, 15, 10), by: 'Admin', status: 'Created' });
-pos[0].lines[0].mcOpen = true;
+pos[0].lines[0].sub = null;
 
 /* Shared with Vendor Portal/Vendor.html through localStorage (same origin, e.g. Live Server),
    so clearances created here show up on the vendor's PO and survive a reload of either page */
@@ -2061,7 +2082,7 @@ function saveMcs() {
         return { id: m.id, qty: m.qty, office: m.office, date: new Date(y, mo - 1, d), createdAt: new Date(m.createdAt), by: m.by, status: m.status, irRequired: m.irRequired !== false,
           withdrawnAt: m.withdrawnAt ? new Date(m.withdrawnAt) : null, withdrawnBy: m.withdrawnBy || '', withdrawReason: m.withdrawReason || '' };
       });
-      l.mcOpen = l.mcs.length > 0;
+      l.sub = null;
     });
   });
   saveMcs(); // re-publish so the Vendor Portal always has the current PO details
@@ -2140,13 +2161,13 @@ function mcDirectStage(po, m) {
 addEventListener('storage', e => { if ([IR_STORE, DR_STORE].includes(e.key) && currentPO() && document.getElementById('poTabs')) rerenderPO(); });
 
 /* IRs under one MC, one row per item */
-function irRows(po, l, irs) {
-  return `<table class="mini-table ir-table"><thead><tr><th>Inspection Request</th><th>Inspection Qty</th><th>Proposed Date</th><th>Raised On</th>
+function irRows(po, l, irs, showMc = false) {
+  return `<table class="mini-table ir-table"><thead><tr><th>Inspection Request</th>${showMc ? '<th>MC ID</th>' : ''}<th>Inspection Qty</th><th>Proposed Date</th><th>Raised On</th>
     <th>Accepted</th><th>Rejected</th><th>Status</th><th>Dispatch Request</th><th class="right">Action</th></tr></thead>
     <tbody>${irs.map(r => {
       const done = isRecorded(r), dr = drOfIr(po, r.id);
       const group = readIRs().filter(x => x.po === r.po && x.id === r.id), gst = irOverall(group);
-      return `<tr><td><button class="mc-link" data-action="irg-open" data-irg="${esc(r.id)}" title="Open Inspection Request">${r.id}</button>${r.items > 1 ? `<div class="faint">Item ${r.item} of ${r.items} · merged IR</div>` : ''}</td><td>${fmtNum(r.qty)} ${l.unit}</td><td>${fmtD(isoToDate(r.inspDate))}</td><td>${fmtDT(new Date(r.createdAt))} · Vendor</td>
+      return `<tr><td><button class="mc-link" data-action="irg-open" data-irg="${esc(r.id)}" title="Open Inspection Request">${r.id}</button>${r.items > 1 ? `<div class="faint">Item ${r.item} of ${r.items} · merged IR</div>` : ''}</td>${showMc ? `<td><b>${esc(r.mcId)}</b></td>` : ''}<td>${fmtNum(r.qty)} ${l.unit}</td><td>${fmtD(isoToDate(r.inspDate))}</td><td>${fmtDT(new Date(r.createdAt))} · Vendor</td>
         <td>${done ? `<b style="color:var(--success)">${fmtNum(r.accepted)}</b>` : '<span class="faint">—</span>'}</td>
         <td>${done ? `<b style="color:${r.rejected ? 'var(--danger)' : 'inherit'}">${fmtNum(r.rejected)}</b>` : '<span class="faint">—</span>'}</td>
         <td>${irChip(r.status)}${apprNote(r)}</td>
@@ -2160,18 +2181,48 @@ function irRows(po, l, irs) {
             ? `<button class="btn btn-primary btn-xs" data-action="dr-create" data-irg="${esc(r.id)}">${icon('plus', 9, 2.6)} Create Dispatch Request</button>` : ''}`}</span></td></tr>`;
     }).join('')}</tbody></table>`;
 }
+/* ---------- Line-item subsections: Manufacturing Clearance · Inspection Request · Dispatch Instruction ----------
+   Each line shows only a thin strip of three tabs (collapsed by default); clicking one opens that panel under the line.
+   The bar above the table opens the same subsection on every line. */
+const LINE_SUBS = [['mc', 'Manufacturing Clearance', 'box'], ['ir', 'Inspection Request', 'check'], ['dr', 'Dispatch Instruction', 'truck']];
+const irsOfLine = (po, l) => readIRs().filter(r => r.po === po.number && (r.lineRef === l.ref || (r.lineRef == null && r.lineCode === l.code)));
+const drsOfLine = (po, l) => drsOfPo(po).filter(d => d.items.some(x => x.lineRef === l.ref || (x.lineRef == null && x.lineCode === l.code)));
+function lineSubInfo(po, l) {
+  const live = liveMcs(l).length, alloc = mcAllocated(l);
+  const irs = irsOfLine(po, l), irIds = new Set(irs.map(r => r.id));
+  const irOpen = new Set(irs.filter(r => !isRecorded(r) && !isClosedIr(r)).map(r => r.id)).size;
+  const drs = drsOfLine(po, l), drOpen = drs.filter(d => !d.invoice).length;
+  return {
+    mc: { n: live, hint: live ? `${fmtNum(alloc)}/${fmtNum(l.qty)} cleared` : 'none yet' },
+    ir: { n: irIds.size, hint: irIds.size ? (irOpen ? `${irOpen} open` : 'all inspected') : 'none yet', warn: irOpen > 0 },
+    dr: { n: drs.length, hint: drs.length ? (drOpen ? `${drOpen} awaiting invoice` : 'invoiced') : 'none yet', warn: drOpen > 0 },
+  };
+}
+function linesSubBar(po) {
+  const any = po.lines.some(l => l.mcs.length);
+  if (!any) return '';
+  return `<div class="lines-subbar"><span>Show for all line items:</span>
+    ${LINE_SUBS.map(([k, label, ic]) => `<button class="sub-tab ${po.lines.every(l => l.sub === k) ? 'on' : ''}" data-action="lines-sub" data-sub="${k}">${icon(ic, 10, 2)} ${label}</button>`).join('')}
+    ${po.lines.some(l => l.sub) ? `<button class="sub-tab" data-action="lines-sub" data-sub="none">${icon('chevUp', 10, 2)} Collapse all</button>` : ''}</div>`;
+}
 function mcRow(po, l, i) {
-  const alloc = mcAllocated(l), pct = Math.min(100, l.qty ? alloc / l.qty * 100 : 0);
-  const pend = l.mcs.reduce((a, m) => a + irsOfMc(po, m).filter(r => !isRecorded(r) && !isClosedIr(r)).length, 0);
-  const live = liveMcs(l).length, wd = l.mcs.length - live;
-  return `<tr class="ship-row"><td colspan="11">
-    <div class="mc-head">
-      <button class="link-btn strong" data-action="mc-toggle" data-i="${i}">MANUFACTURING CLEARANCE (${live}${wd ? ` · ${wd} withdrawn` : ''}) ${icon(l.mcOpen ? 'chevUp' : 'eye', 10, 2)}</button>
-      <span class="mc-meter" title="${fmtNum(alloc)} of ${fmtNum(l.qty)} ${l.unit} cleared"><span style="width:${pct}%"></span></span>
-      <span class="mc-meter-txt">${fmtNum(alloc)} / ${fmtNum(l.qty)} ${l.unit} cleared · <b class="${mcRemaining(l) > 0 ? '' : 'ok'}">${fmtNum(mcRemaining(l))} remaining</b></span>
-      ${pend ? `<span class="chip amber">${pend} inspection request item${pend > 1 ? 's' : ''} open</span>` : ''}
-    </div>
-    ${l.mcOpen ? (l.mcs.length ? `<table class="mini-table mc-table"><thead><tr><th>MC ID</th><th>Quantity</th><th>Shipping Location</th>
+  const info = lineSubInfo(po, l);
+  const strip = `<div class="sub-tabs" role="tablist" aria-label="Subsections of ${l.code}">${LINE_SUBS.map(([k, label, ic]) => {
+    const x = info[k], on = l.sub === k;
+    return `<button class="sub-tab ${on ? 'on' : ''} ${x.n ? '' : 'empty'}" role="tab" aria-selected="${on}" data-action="line-sub" data-i="${i}" data-sub="${k}">
+      ${icon(ic, 10, 2)} ${label} <span class="n">${x.n}</span> <span class="h ${x.warn ? 'warn' : ''}">${x.hint}</span> ${icon(on ? 'chevUp' : 'chevDown', 9, 2.4)}</button>`;
+  }).join('')}</div>`;
+  return `<tr class="sub-row"><td colspan="11">${strip}${l.sub ? `<div class="sub-panel" role="tabpanel">${lineSubPanel(po, l, i)}</div>` : ''}</td></tr>`;
+}
+function lineSubPanel(po, l, i) {
+  if (l.sub === 'mc') {
+    const alloc = mcAllocated(l), pct = Math.min(100, l.qty ? alloc / l.qty * 100 : 0), live = liveMcs(l).length, wd = l.mcs.length - live;
+    return `<div class="mc-head">
+        <span class="link-btn strong">MANUFACTURING CLEARANCE (${live}${wd ? ` · ${wd} withdrawn` : ''})</span>
+        <span class="mc-meter" title="${fmtNum(alloc)} of ${fmtNum(l.qty)} ${l.unit} cleared"><span style="width:${pct}%"></span></span>
+        <span class="mc-meter-txt">${fmtNum(alloc)} / ${fmtNum(l.qty)} ${l.unit} cleared · <b class="${mcRemaining(l) > 0 ? '' : 'ok'}">${fmtNum(mcRemaining(l))} remaining</b></span>
+      </div>
+      ${(l.mcs.length ? `<table class="mini-table mc-table"><thead><tr><th>MC ID</th><th>Quantity</th><th>Shipping Location</th>
         <th>Earliest Delivery Date</th><th>Created On</th><th>Inspection</th><th>Status</th><th class="right">Action</th></tr></thead>
       <tbody>${l.mcs.map((m, k) => {
         const irs = irsOfMc(po, m), acc = r2(irs.reduce((a, r) => a + (r.accepted || 0), 0)), w = m.status === 'Withdrawn';
@@ -2179,7 +2230,7 @@ function mcRow(po, l, i) {
         const busy = irs.some(isLiveIr) || !!dr;
         return `<tr class="${w ? 'mc-wd' : ''}"><td><button class="mc-link" data-action="mc-view" data-i="${i}" data-k="${k}" title="View clearance, inspection and dispatch requests">${m.id}</button></td><td>${fmtNum(m.qty)} ${l.unit}</td><td>${esc(officeName(m.office))}</td>
         <td>${fmtD(m.date)}</td><td>${fmtDT(m.createdAt)} · ${esc(m.by)}</td>
-        <td>${direct ? '<span class="chip gray">Not required</span>' : irs.length ? `<b>${irs.length}</b> IR · ${fmtNum(acc)} accepted` : '<span class="faint">No request yet</span>'}</td>
+        <td>${direct ? '<span class="chip gray">Not required</span>' : irs.length ? `<button class="mc-link" data-action="line-sub" data-i="${i}" data-sub="ir" title="Show in Inspection Request">${irs.length} IR</button> · ${fmtNum(acc)} accepted` : '<span class="faint">No request yet</span>'}</td>
         <td>${w ? `<span class="chip gray">Withdrawn</span><div class="stage-sub">${m.withdrawnAt ? fmtD(m.withdrawnAt) : ''}${m.withdrawReason ? ` · “${esc(m.withdrawReason)}”` : ''}</div>`
           : direct ? `${irChip(mcDirectStage(po, m))}${dr ? `<div class="stage-sub"><button class="mc-link" data-action="dr-view" data-dr="${dr.id}">${dr.id}</button></div>` : ''}`
           : `<span class="chip">${m.status}</span>`}</td>
@@ -2189,10 +2240,28 @@ function mcRow(po, l, i) {
           : busy
           ? `<button class="btn btn-danger-soft btn-xs" disabled title="${dr ? 'A Dispatch Request exists for this clearance' : 'An Inspection Request is in progress on this clearance'}">${icon('lock', 9, 2)} Withdraw</button>`
           : `<button class="btn btn-danger-soft btn-xs" data-action="mc-wd" data-i="${i}" data-k="${k}" title="Withdraw clearance and return its quantity to the line item">${icon('back', 9, 2)} Withdraw</button>`}</td></tr>
-        ${irs.length ? `<tr class="ir-sub"><td colspan="8"><div class="sec-mini">Inspection Requests on ${m.id}</div>${irRows(po, l, irs)}</td></tr>` : ''}`;
+`;
       }).join('')}</tbody></table>`
-      : `<div class="faint" style="padding:8px 0 2px">No Manufacturing Clearance created for this line item yet.</div>`) : ''}
-  </td></tr>`;
+      : `<div class="empty-note">No Manufacturing Clearance created for this line item yet.</div>`)}`;
+  }
+  if (l.sub === 'ir') {
+    const irs = irsOfLine(po, l);
+    return `<div class="mc-head"><span class="link-btn strong">INSPECTION REQUESTS ON ${l.code} (${new Set(irs.map(r => r.id)).size})</span>
+        <span class="mc-meter-txt">One row per clearance in a request · click an IR to open all its items</span></div>
+      ${irs.length ? `<div class="table-wrap">${irRows(po, l, irs, true)}</div>` : '<div class="empty-note">The vendor has not raised an Inspection Request on this line item yet.</div>'}`;
+  }
+  const drs = drsOfLine(po, l);
+  return `<div class="mc-head"><span class="link-btn strong">DISPATCH INSTRUCTIONS ON ${l.code} (${drs.length})</span></div>
+    ${drs.length ? `<div class="table-wrap"><table class="mini-table ir-table"><thead><tr><th>Dispatch Request</th><th>Inspection Request</th><th>MC ID</th>
+        <th>Dispatch Qty</th><th>Ship To</th><th>Dispatch By</th><th>Mode</th><th>Status</th><th>Invoice</th><th class="right">Action</th></tr></thead>
+      <tbody>${drs.map(d => d.items.filter(x => x.lineRef === l.ref || (x.lineRef == null && x.lineCode === l.code)).map((x, n) => `<tr>
+        <td>${n ? '' : `<button class="mc-link" data-action="dr-view" data-dr="${d.id}">${d.id}</button><div class="faint">${fmtDT(new Date(d.createdAt))}</div>`}</td>
+        <td>${n ? '' : d.irId ? `<button class="mc-link" data-action="irg-open" data-irg="${esc(d.irId)}">${esc(d.irId)}</button>` : '<span class="faint">Not required</span>'}</td>
+        <td><b>${esc(x.mcId)}</b></td><td>${fmtNum(x.qty)} ${x.unit || l.unit}</td><td>${esc(x.shipTo || '—')}</td>
+        <td>${n ? '' : fmtD(isoToDate(d.dispatchBy))}</td><td>${n ? '' : d.mode}</td><td>${n ? '' : drChip(d.status)}</td>
+        <td>${n ? '' : d.invoice ? `<b>${esc(d.invoice.no)}</b>` : '<span class="faint">Awaiting supplier</span>'}</td>
+        <td class="right">${n ? '' : `<button class="btn btn-ghost btn-xs" data-action="dr-view" data-dr="${d.id}">${icon('eye', 9, 2)} View</button>`}</td></tr>`).join('')).join('')}</tbody></table></div>`
+      : '<div class="empty-note">No Dispatch Instruction issued for this line item yet.</div>'}`;
 }
 
 /* =====================================================================
@@ -2788,7 +2857,7 @@ function openMcModal(po, lineIdx) {
           irRequired: row.irReq });
         n++;
       });
-      l.mcOpen = true;
+      l.sub = 'mc';   // show what was just created
     });
     const direct = rows.filter(r => !r.irReq).length;
     po.timeline.push({ title: 'Manufacturing Clearance Created', by: `${n} schedule(s) by Admin${direct ? ` · inspection not required on ${direct} line(s)` : ''}`, at: new Date() });
@@ -2816,7 +2885,13 @@ const MC_ACTIONS = {
   'ir-view': el => openIrView(currentPO(), el.dataset.ir),
   'irg-open': el => openIrGroup(currentPO(), el.dataset.irg),
   'ir-filter': el => { ui.irFilter = el.dataset.st; rerenderPO(); },
-  'mc-toggle': el => { const l = currentPO().lines[+el.dataset.i]; l.mcOpen = !l.mcOpen; rerenderPO(); },
+  'mc-toggle': el => { const l = currentPO().lines[+el.dataset.i]; l.sub = l.sub === 'mc' ? null : 'mc'; rerenderPO(); },
+  'line-sub': el => { const l = currentPO().lines[+el.dataset.i]; l.sub = l.sub === el.dataset.sub ? null : el.dataset.sub; rerenderPO(); },
+  'lines-sub': el => {
+    const po = currentPO(), k = el.dataset.sub, all = po.lines.every(l => l.sub === k);
+    po.lines.forEach(l => { l.sub = k === 'none' || all ? null : k; });
+    rerenderPO();
+  },
   'mc-wd': el => {
     const po = currentPO(), l = po.lines[+el.dataset.i], m = l.mcs[+el.dataset.k];
     const busy = () => irsOfMc(po, m).some(isLiveIr) || !!drOfMc(po, m.id);
@@ -2855,7 +2930,9 @@ function route() {
   let m;
   const changed = h !== lastRoute;
   if ((m = h.match(/^#\/procurement\/po\/(\d+)\/details$/))) {
-    if (changed) { ui.poComments = false; ui.poLock = false; ui.mcSel = new Set(); ui.irGroupOpen = null; }
+    if (changed) { ui.poComments = false; ui.poLock = false; ui.mcSel = new Set(); ui.irGroupOpen = null;
+      poById(m[1])?.lines.forEach(l => { l.sub = null; });   // every line-item subsection starts collapsed when a PO is opened
+    }
     lastRoute = h; setNav('Procurement', 'Purchase Order'); renderPODetail(+m[1]);
     if (changed) scrollTo(0, 0);
     return;
