@@ -240,6 +240,17 @@
   .banner.dr{background:var(--blue-bg);border-color:#CFDDFB}
   .inp:disabled{background:var(--row-alt);color:var(--text);font-weight:600}
   .dr-table td{vertical-align:middle}
+  .st-IRW{background:var(--slate-bg);color:#4B5563}
+  .st-IRD{background:var(--red-bg);color:var(--red)}
+  .mini tr.wd td{color:var(--faint)}
+  .mini tr.wd td b,.mini tr.wd .mc-id{color:var(--muted)}
+  .appr-note{font-size:9.5px;color:var(--muted);margin-top:3px;white-space:normal;max-width:220px}
+  .clar{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+  .clar .msg{background:#F2F3F5;border-radius:6px;padding:8px 10px;font-size:10.5px;max-width:560px}
+  .clar .msg.me{background:var(--green-50);align-self:flex-end}
+  .clar .msg .h{font-size:9.5px;color:var(--muted);margin-bottom:3px}
+  .clar-reply{display:flex;gap:8px;align-items:flex-end}
+  .clar-reply textarea{flex:1}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1D1D22;color:#fff;padding:10px 16px;border-radius:8px;font-size:11.5px;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.2)}
   .placeholder{background:#fff;border:1px dashed var(--border);border-radius:8px;padding:60px 20px;text-align:center;color:var(--muted)}
 
@@ -469,7 +480,8 @@ function loadBuyerMcs() {
       l.mcs = (byRef[l.ref] || []).map(m => {
         const [y, mo, d] = m.date.split('-').map(Number);
         return { id: m.id, qty: m.qty, officeName: m.officeName, address: m.address, date: new Date(y, mo - 1, d),
-          createdAt: new Date(m.createdAt), status: m.status };
+          createdAt: new Date(m.createdAt), status: m.status, irRequired: m.irRequired !== false,
+          withdrawnAt: m.withdrawnAt ? new Date(m.withdrawnAt) : null, withdrawReason: m.withdrawReason || '' };
       });
       if (l.mcs.length && l.mcOpen === undefined) l.mcOpen = true;
     });
@@ -514,7 +526,9 @@ const poBase = o => r2(o.lines.reduce((a, l) => a + lineBase(l), 0));
 const poTax = o => r2(o.lines.reduce((a, l) => a + lineTax(l), 0));
 const mcLoc = m => m.officeName ? { name: m.officeName, addr: m.address } : { name: OFFICES[m.office].name, addr: OFFICES[m.office].addr };
 const fmtDT = d => `${p2(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()} ${p2(d.getHours() % 12 || 12)}:${p2(d.getMinutes())} ${d.getHours() < 12 ? 'am' : 'pm'}`;
-const mcAlloc = l => r2(l.mcs.reduce((a, m) => a + m.qty, 0));
+const isWithdrawnMc = m => m.status === 'Withdrawn';
+const liveMcs = l => l.mcs.filter(m => !isWithdrawnMc(m));
+const mcAlloc = l => r2(liveMcs(l).reduce((a, m) => a + m.qty, 0));
 const byId = id => ORDERS.find(o => o.id === +id);
 const TODAY = D(2026,10,5);
 
@@ -612,7 +626,7 @@ function listView() {
         <td>${esc(OFFICES[o.office].name)}</td>
         <td class="right">INR ${fmtN(poTotal(o))}</td>
         <td class="center">${fmtD(o.deliveryDate)}</td>
-        <td class="right">${o.invoices.length}</td></tr>`).join('')
+        <td class="right">${invoicesOf(o).length}</td></tr>`).join('')
       : `<tr><td colspan="7" class="empty">No orders match these filters.</td></tr>`}</tbody>
     </table></div>`;
 }
@@ -622,7 +636,7 @@ function listView() {
    ===================================================================== */
 function detailView(o) {
   const off = OFFICES[o.office];
-  const mcLines = o.lines.filter(l => l.mcs.length).length;
+  const mcLines = o.lines.filter(l => liveMcs(l).length).length;
   const balGrn = l => r2(l.qty - l.delivered);
   return `<div class="crumb">Orders</div><h1>Purchase Orders</h1>
     <div class="tabs">
@@ -641,9 +655,9 @@ function detailView(o) {
         <span>Hindalco has released Manufacturing Clearance for ${mcLines} of ${o.lines.length} line item${o.lines.length > 1 ? 's' : ''}.
         Dispatch only the cleared quantity to the shipping location and on or after the earliest delivery date shown under each line item.</span></div>` : ''}
 
-    ${(() => { const n = drsOf(o).filter(d => d.status === 'Released').length; return n ? `<div class="banner dr"><b>${icon('truck', 11)} Dispatch Request${n > 1 ? 's' : ''} received</b>
-        <span>Hindalco has released ${n} Dispatch Request${n > 1 ? 's' : ''} for inspected material. <button class="link" data-goto="dispatch">Create the ASN</button> once the consignment is dispatched.</span></div>` : ''; })()}
-    <div class="po-title">PURCHASE ORDER / ${o.no} / ${o.invoices.length} INVOICE SUBMITTED <span class="chip st-${o.status}">${STATUS[o.status]}</span></div>
+    ${(() => { const n = drsOf(o).filter(d => !d.invoice).length; return n ? `<div class="banner dr"><b>${icon('truck', 11)} Dispatch Request${n > 1 ? 's' : ''} received</b>
+        <span>Hindalco has released ${n} Dispatch Request${n > 1 ? 's' : ''} for inspected material. <button class="link" data-goto="dispatch">Submit the invoice</button> against each Dispatch Request.</span></div>` : ''; })()}
+    <div class="po-title">PURCHASE ORDER / ${o.no} / ${invoicesOf(o).length} INVOICE SUBMITTED <span class="chip st-${o.status}">${STATUS[o.status]}</span></div>
     <div class="card">
       <button class="btn" data-dl-po="${o.id}">${icon('download', 11, 2.2)} Download PO</button>
       <div class="parties">
@@ -702,53 +716,72 @@ function detailView(o) {
 
     <div class="sec-lbl">INVOICES</div>
     <table class="simple">
-      <thead><tr><th>Invoice No.</th><th>Invoice Date</th><th>Status</th></tr></thead>
-      <tbody>${o.invoices.length ? o.invoices.map(v => `<tr><td><b>${v.no}</b></td><td>${fmtD(v.date)}</td><td>${v.status}</td></tr>`).join('')
-        : '<tr><td colspan="3" class="faint">No invoice submitted against this PO</td></tr>'}</tbody>
+      <thead><tr><th>Invoice No.</th><th>Invoice Date</th><th>Against</th><th>Amount</th><th>Status</th></tr></thead>
+      <tbody>${invoicesOf(o).length ? invoicesOf(o).map(v => `<tr><td><b>${esc(v.no)}</b></td><td>${fmtD(v.date)}</td>
+        <td>${v.dr ? `<button class="mc-id" data-dr="${v.dr}">${v.dr}</button>` : 'PO'}</td><td>${v.amount != null ? 'INR ' + fmtN(v.amount) : '-'}</td><td>${v.status}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="faint">No invoice submitted against this PO</td></tr>'}</tbody>
     </table>
     ${selBar(o)}`;
 }
 
-/* Manufacturing Clearance released by the buyer — read-only for the vendor */
 /* =====================================================================
-   Inspection Requests — vendor raises them against a Manufacturing Clearance.
-   Shared with ../Buyer portal.html through localStorage (same origin, e.g. Live Server):
-   the buyer sees each request under its MC and records Accepted / Rejected quantity.
+   Inspection Requests — vendor raises them against one or more Manufacturing Clearances.
+   Shared through localStorage (same origin, e.g. Live Server) with:
+     · ../Employee Portal — approvers (QA Head → Procurement Manager) approve / decline / hold / ask for clarification
+     · ../Buyer portal    — Hindalco admin records the inspection result and raises the Dispatch Request
    ===================================================================== */
-const IR_STORE = 'bajel.ir.v1';
-const IR_APPROVER = 'Rahul Verma';
+const IR_STORE = 'bajel.ir.v2';
+const APPROVERS = { priya: { name: 'Priya Nair', role: 'QA Head' }, rahul: { name: 'Rahul Verma', role: 'Procurement Manager' } };
+const IR_CHAIN = ['priya', 'rahul'];
+const apprName = k => APPROVERS[k]?.name || k;
 let irMem = [];
-/* IR lifecycle: Pending (raised by vendor) → Report Pending (approved by Hindalco's approver)
-   → Ready to Dispatch (Hindalco recorded the inspection; Rejected when nothing was accepted) */
-const IR_LEGACY = { 'Inspection Pending':'Pending', 'Accepted':'Ready to Dispatch', 'Partially Accepted':'Ready to Dispatch' };
-const normIR = r => (IR_LEGACY[r.status] ? { ...r, status: IR_LEGACY[r.status] } : r);
-const readIRs = () => { try { const v = localStorage.getItem(IR_STORE); return (v ? JSON.parse(v).irs || [] : irMem).map(normIR); } catch (e) { return irMem.map(normIR); } };
+/* IR lifecycle: Pending (in approval on the Employee Portal) → Report Pending (approved) → Ready to Dispatch / Rejected (inspection recorded)
+   Side exits: Declined (by an approver) · Withdrawn (by the vendor, while still in approval) */
+const readIRs = () => { try { const v = localStorage.getItem(IR_STORE); return v ? JSON.parse(v).irs || [] : irMem; } catch (e) { return irMem; } };
 const isRecorded = r => r.status === 'Ready to Dispatch' || r.status === 'Rejected';
+const isClosedIr = r => r.status === 'Withdrawn' || r.status === 'Declined';
 const writeIRs = irs => { irMem = irs; try { localStorage.setItem(IR_STORE, JSON.stringify({ irs })); } catch (e) {} };
-/* Dispatch Requests are created by the buyer from an inspected IR (qty = accepted qty);
-   the vendor raises an ASN against each one from this PO */
-const DR_STORE = 'bajel.dr.v1';
+/* Dispatch Requests: one per Inspection Request, raised by Hindalco for all accepted quantity;
+   the vendor submits one invoice against each */
+const DR_STORE = 'bajel.dr.v2';
 let drMem = [];
 const readDRs = () => { try { const v = localStorage.getItem(DR_STORE); return v ? JSON.parse(v).drs || [] : drMem; } catch (e) { return drMem; } };
 const writeDRs = drs => { drMem = drs; try { localStorage.setItem(DR_STORE, JSON.stringify({ drs })); } catch (e) {} };
 const drsOf = o => readDRs().filter(d => d.po === o.no);
-const drChip = st => `<span class="chip st-${st === 'ASN Created' ? 'DRA' : 'DRR'}">${st === 'Released' ? 'ASN Pending' : st}</span>`;
-const IR_ST = { 'Pending':'IRP', 'Report Pending':'IRRP', 'Ready to Dispatch':'IRA', 'ASN Pending':'IRPA', 'ASN Submitted':'IRA', 'Rejected':'IRR' };
+const drOfIr = r => readDRs().find(d => d.po === r.po && d.irId === r.id);
+const drAmount = d => r2(d.items.reduce((a, x) => a + x.qty * x.price * (1 + x.gst / 100), 0));
+const drChip = st => `<span class="chip st-${st === 'Invoice Submitted' ? 'DRA' : 'DRR'}">${st}</span>`;
+/* clearances released with "Inspection Required" off skip the IR flow: Ready to Dispatch at once, Hindalco raises the DR on the MC itself */
+const irReq = m => m.irRequired !== false;
+const drOfMc = (o, mcId) => readDRs().find(d => d.po === o.no && !d.irId && d.mcId === mcId);
+const mcDirectStage = (o, m) => { const d = drOfMc(o, m.id); return !d ? 'Ready to Dispatch' : d.invoice ? 'Invoice Submitted' : 'Invoice Pending'; };
+/* invoices on the PO: seeded ones + those submitted against Dispatch Requests */
+const invoicesOf = o => [...o.invoices, ...drsOf(o).filter(d => d.invoice).map(d =>
+  ({ no: d.invoice.no, date: parseISO(d.invoice.date), amount: d.invoice.amount, status: 'Submitted', dr: d.id }))];
+const IR_ST = { 'Pending':'IRP', 'Report Pending':'IRRP', 'Ready to Dispatch':'IRA', 'Invoice Pending':'IRPA', 'Invoice Submitted':'IRA',
+  'Rejected':'IRR', 'Declined':'IRD', 'Withdrawn':'IRW' };
 const irChip = st => `<span class="chip st-${IR_ST[st] || 'IRP'}">${st}</span>`;
 const irsOf = (o, m) => readIRs().filter(r => r.po === o.no && r.mcId === m.id);
-/* qty that can still be offered = MC qty − accepted − qty already under inspection (rejected qty can be re-offered) */
+/* qty that can still be offered = MC qty − accepted − qty in live IRs (rejected / declined / withdrawn qty can be re-offered) */
 function irSummary(m, irs) {
   const sum = f => r2(irs.reduce((a, r) => a + (f(r) || 0), 0));
-  const pending = sum(r => !isRecorded(r) ? r.qty : 0);
+  const pending = sum(r => !isRecorded(r) && !isClosedIr(r) ? r.qty : 0);
   const accepted = sum(r => r.accepted), rejected = sum(r => r.rejected);
-  return { pending, accepted, rejected, available: Math.max(0, r2(m.qty - accepted - pending)) };
+  return { pending, accepted, rejected, available: isWithdrawnMc(m) || !irReq(m) ? 0 : Math.max(0, r2(m.qty - accepted - pending)) };
 }
 const isoD = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 const parseISO = v => { const [y, mo, d] = v.split('-').map(Number); return new Date(y, mo - 1, d); };
+/* where the IR is in approval / why it closed — one line under the status chip */
+function apprNote(r) {
+  const a = r.appr, waived = (a?.history || []).find(h => h.waive);
+  if (r.status === 'Pending' && a) return `<div class="appr-note">${a.state === 'hold' ? 'On hold with' : 'With'} ${apprName(a.chain[a.level])} · level ${a.level + 1} of ${a.chain.length}${waived ? ' · inspection waived' : ''}</div>`;
+  if (r.inspectionWaived) return `<div class="appr-note">Inspection waived by ${apprName(waived?.by)}</div>`;
+  if (r.status === 'Declined') return `<div class="appr-note">Declined by ${esc(r.declinedBy || 'approver')}${r.declineReason ? ` · “${esc(r.declineReason)}”` : ''}</div>`;
+  if (r.status === 'Withdrawn') return `<div class="appr-note">Withdrawn ${r.withdrawnAt ? fmtD(new Date(r.withdrawnAt)) : ''}${r.withdrawReason ? ` · “${esc(r.withdrawReason)}”` : ''}</div>`;
+  return '';
+}
 
-/* A merged IR is stored as one record per MC item: same id, item n of N, key "IR-…#n" (older IRs have no key) */
-const irKey = r => r.key || r.id;
-const drOfIr = r => readDRs().find(d => d.po === r.po && (d.irKey || d.irId) === irKey(r));
+/* A merged IR is stored as one record per MC item: same id, item n of N, key "IR-…#n" */
 function irTable(irs) {
   const all = readIRs();
   return `<table class="mini"><thead><tr><th>Inspection Request</th><th>Inspection Qty</th><th>Proposed Inspection Date</th><th>Raised On</th>
@@ -756,55 +789,67 @@ function irTable(irs) {
     <tbody>${irs.map(r => {
       const dr = drOfIr(r);
       const others = r.items > 1 ? all.filter(x => x.po === r.po && x.id === r.id && x.mcId !== r.mcId).map(x => x.mcId) : [];
-      return `<tr><td><button class="mc-id" data-ir-open="${r.id}" title="View Inspection Request ${r.id}">${r.id} ${icon('chevR', 9, 2.6)}</button>${others.length ? `<div class="merge-note" style="white-space:normal;max-width:200px">Item ${r.item} of ${r.items} · merged with ${others.join(', ')}</div>` : ''}</td>
+      return `<tr class="${isClosedIr(r) ? 'wd' : ''}"><td><button class="mc-id" data-ir-open="${r.id}" title="View Inspection Request ${r.id}">${r.id} ${icon('chevR', 9, 2.6)}</button>${others.length ? `<div class="merge-note" style="white-space:normal;max-width:200px">Item ${r.item} of ${r.items} · merged with ${others.join(', ')}</div>` : ''}</td>
       <td>${fmtN(r.qty)}</td><td>${fmtD(parseISO(r.inspDate))}</td><td>${fmtDT(new Date(r.createdAt))}</td>
       <td>${!isRecorded(r) ? '<span class="faint">—</span>' : `<b style="color:var(--green-600)">${fmtN(r.accepted)}</b>`}</td>
       <td>${!isRecorded(r) ? '<span class="faint">—</span>' : `<b style="color:${r.rejected ? 'var(--red)' : 'inherit'}">${fmtN(r.rejected)}</b>`}</td>
-      <td>${irChip(r.status)}${r.inspRemarks ? `<div class="faint" style="margin-top:3px;white-space:normal;max-width:200px">${esc(r.inspRemarks)}</div>` : ''}</td>
-      <td>${dr ? `<b>${dr.id}</b> ${drChip(dr.status)}` : '<span class="faint">—</span>'}</td>
-      <td>${irDeletable(r.po, r.id) ? `<button class="btn-del" data-ir-del="${r.id}" title="Delete ${r.id}">${icon('trash', 9, 2)} Delete</button>` : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table>`;
+      <td>${irChip(r.status)}${apprNote(r)}${r.inspRemarks ? `<div class="faint" style="margin-top:3px;white-space:normal;max-width:200px">${esc(r.inspRemarks)}</div>` : ''}</td>
+      <td>${dr ? `<button class="mc-id" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}` : '<span class="faint">—</span>'}</td>
+      <td>${irWithdrawable(r.po, r.id) ? `<button class="btn-del" data-ir-wd="${r.id}" title="Withdraw ${r.id}">${icon('back', 9, 2.4)} Withdraw</button>` : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table>`;
 }
 
-/* ---------- Deleting an active Inspection Request ----------
-   Only while every item is still "Pending" (not yet approved by Hindalco). A merged IR is deleted as a whole;
-   its quantity becomes available again on each clearance and it disappears from the buyer portal. */
-const irItems = (po, id) => readIRs().filter(r => r.po === po && r.id === id);
-const irDeletable = (po, id) => { const it = irItems(po, id); return it.length > 0 && it.every(r => r.status === 'Pending'); };
-function irDeleteModal(o, id) {
+/* ---------- Withdrawing an Inspection Request ----------
+   Allowed while the IR is still in approval (status Pending, incl. on hold). A merged IR is withdrawn as a whole.
+   The record stays on every portal with status Withdrawn; its quantity becomes available for inspection again. */
+const irItems = (po, id) => readIRs().filter(r => r.po === po && r.id === id).sort((a, b) => (a.item || 1) - (b.item || 1));
+const irWithdrawable = (po, id) => { const it = irItems(po, id); return it.length > 0 && it.every(r => r.status === 'Pending'); };
+function irWithdrawModal(o, id) {
   const items = irItems(o.no, id);
-  if (!irDeletable(o.no, id)) return toast(`${id} has been approved by Hindalco and can't be deleted`);
-  modal(`Delete Inspection Request · ${id}`, `
-    <p style="margin:0 0 12px;font-size:12px">This deletes <b>${id}</b>${items.length > 1 ? ` and all <b>${items.length}</b> of its merged items` : ''}.
-      Hindalco will no longer see it, and the quantity becomes available for inspection again on ${items.length > 1 ? 'each clearance' : 'the clearance'}.</p>
+  if (!irWithdrawable(o.no, id)) return toast(`${id} is no longer in approval and can't be withdrawn`);
+  modal(`Withdraw Inspection Request · ${id}`, `
+    <p style="margin:0 0 12px;font-size:12px">Withdrawing stops the approval of <b>${id}</b>${items.length > 1 ? ` and all <b>${items.length}</b> of its merged items` : ''}.
+      The request stays on record as <b>Withdrawn</b> for you and Hindalco, and the quantity becomes available for inspection again on ${items.length > 1 ? 'each clearance' : 'the clearance'}.</p>
     <table class="mini merge"><thead><tr><th>Item</th><th>MC ID</th><th>Line Item</th><th>Inspection Qty</th><th>Proposed Date</th></tr></thead>
       <tbody>${items.map(r => `<tr><td>${r.item || 1}</td><td><b>${r.mcId}</b></td><td>${r.lineCode}</td><td>${fmtN(r.qty)}${r.unit ? ` <span class="faint">${r.unit}</span>` : ''}</td>
-        <td>${fmtD(parseISO(r.inspDate))}</td></tr>`).join('')}</tbody></table>`,
+        <td>${fmtD(parseISO(r.inspDate))}</td></tr>`).join('')}</tbody></table>
+    <div class="field" style="margin-top:14px"><label for="wdReason">Reason for withdrawal *</label>
+      <textarea class="inp" id="wdReason" rows="2" placeholder="e.g. Material re-scheduled, will re-offer next week"></textarea>
+      <div class="err" id="wdReasonErr" hidden></div></div>`,
     `<button class="btn btn-ghost" data-close-btn>Cancel</button>
-     <button class="btn btn-danger" data-ir-del-ok="${id}">${icon('trash', 10, 2.2)} Delete Inspection Request</button>`);
+     <button class="btn btn-danger" data-ir-wd-ok="${id}">${icon('back', 10, 2.4)} Withdraw Inspection Request</button>`);
+  setTimeout(() => document.getElementById('wdReason')?.focus(), 30);
 }
-function irDelete(o, id) {
-  if (!irDeletable(o.no, id)) { closeModal(); rerender(); return toast(`${id} has been approved by Hindalco and can't be deleted`); }
-  writeIRs(readIRs().filter(r => !(r.po === o.no && r.id === id)));
+function irWithdraw(o, id) {
+  const ta = document.getElementById('wdReason'), reason = ta.value.trim(), err = document.getElementById('wdReasonErr');
+  err.hidden = !!reason; err.textContent = reason ? '' : 'Please add a reason'; ta.classList.toggle('bad', !reason);
+  if (!reason) return;
+  if (!irWithdrawable(o.no, id)) { closeModal(); rerender(); return toast(`${id} is no longer in approval and can't be withdrawn`); }
+  const all = readIRs(), at = new Date().toISOString();
+  all.forEach(r => { if (r.po === o.no && r.id === id) Object.assign(r, { status: 'Withdrawn', withdrawnAt: at, withdrawReason: reason, withdrawnBy: VENDOR.name,
+    appr: { ...r.appr, state: 'withdrawn' } }); });
+  writeIRs(all);
   closeModal(); rerender();
-  toast(`${id} deleted`);
+  toast(`${id} withdrawn`);
 }
 
 /* ---------- Inspection Request view: one IR, all its line items and the MC schedule behind every item ---------- */
 function irOverall(items) {
+  const s = items[0].status;
+  if (s === 'Withdrawn' || s === 'Declined') return s;
   if (items.some(r => r.status === 'Pending')) return 'Pending';
   if (items.some(r => r.status === 'Report Pending')) return 'Report Pending';
   return items.some(r => r.status === 'Ready to Dispatch') ? 'Ready to Dispatch' : 'Rejected';
 }
-/* filter stage: once Ready to Dispatch, how far dispatch has got — tells the supplier where an ASN or invoice is due */
+/* filter stage: once Ready to Dispatch, how far dispatch has got — tells the supplier where an invoice is due */
 const IR_STAGES = [
-  ['Pending', 'Awaiting Hindalco approval'], ['Report Pending', 'Approved · inspection report awaited'], ['Ready to Dispatch', 'Inspected · awaiting Dispatch Request'],
-  ['ASN Pending', 'Dispatch Request received · submit the ASN'], ['ASN Submitted', 'ASN submitted · raise the invoice'], ['Rejected', 'Nothing accepted'] ];
+  ['Pending', 'In approval at Hindalco'], ['Report Pending', 'Approved · inspection report awaited'], ['Ready to Dispatch', 'Inspected · awaiting Dispatch Request'],
+  ['Invoice Pending', 'Dispatch Request received · submit the invoice'], ['Invoice Submitted', 'Invoice submitted against the Dispatch Request'],
+  ['Rejected', 'Nothing accepted'], ['Declined', 'Declined by a Hindalco approver'], ['Withdrawn', 'Withdrawn by you'] ];
 function irStage(items) {
   const st = irOverall(items);
   if (st !== 'Ready to Dispatch') return st;
-  const drs = items.filter(r => r.status === 'Ready to Dispatch' && r.accepted > 0).map(r => drOfIr(r));
-  if (drs.some(d => !d)) return 'Ready to Dispatch';
-  return drs.some(d => d.status !== 'ASN Created') ? 'ASN Pending' : 'ASN Submitted';
+  const dr = drOfIr(items[0]);
+  return !dr ? 'Ready to Dispatch' : dr.invoice ? 'Invoice Submitted' : 'Invoice Pending';
 }
 const unitTotals = (items, f) => {
   const u = {};
@@ -832,8 +877,8 @@ function irSection(o) {
     ${shown.length ? '' : `<div class="placeholder" style="padding:22px">No Inspection Requests with status ${f}</div>`}
     ${shown.length ? `<div class="table-wrap"><table class="simple dr-table">
       <thead><tr><th style="text-align:left">Inspection Request</th><th>Items</th><th style="text-align:left">Manufacturing Clearances</th><th>Line Items</th>
-        <th>Inspection Qty</th><th>Accepted</th><th>Rejected</th><th>Proposed Date</th><th>Status</th><th>Action</th></tr></thead>
-      <tbody>${shown.map(({ id, items, stage }) => { const r0 = items[0], st = irOverall(items); return `<tr>
+        <th>Inspection Qty</th><th>Accepted</th><th>Rejected</th><th>Proposed Date</th><th>Status</th><th>Dispatch Request</th><th>Action</th></tr></thead>
+      <tbody>${shown.map(({ id, items, stage }) => { const r0 = items[0], st = irOverall(items), dr = drOfIr(r0); return `<tr>
         <td style="text-align:left"><button class="mc-id" data-ir-open="${id}">${id} ${icon('chevR', 9, 2.6)}</button><div class="faint">${fmtDT(new Date(r0.createdAt))}</div></td>
         <td>${items.length}</td>
         <td style="text-align:left;white-space:normal;max-width:220px">${items.map(r => r.mcId).join(', ')}</td>
@@ -842,59 +887,70 @@ function irSection(o) {
         <td style="color:var(--green-600)">${items.some(isRecorded) ? unitTotals(items, r => r.accepted) : '—'}</td>
         <td>${items.some(isRecorded) ? unitTotals(items, r => r.rejected) : '—'}</td>
         <td>${fmtD(parseISO(r0.inspDate))}</td>
-        <td>${irChip(st)}${stage !== st ? `<div class="stage-sub">${irChip(stage)}</div>` : ''}</td>
-        <td>${irDeletable(o.no, id) ? `<button class="btn-del" data-ir-del="${id}">${icon('trash', 9, 2)} Delete</button>`
-          : stage === 'ASN Pending' ? `<button class="btn btn-primary" data-goto="dispatch">Submit ASN</button>`
+        <td>${irChip(st)}${stage !== st ? `<div class="stage-sub">${irChip(stage)}</div>` : ''}${apprNote(r0)}</td>
+        <td>${dr ? `<button class="mc-id" data-dr="${dr.id}">${dr.id}</button>` : '<span class="faint">—</span>'}</td>
+        <td>${irWithdrawable(o.no, id) ? `<button class="btn-del" data-ir-wd="${id}">${icon('back', 9, 2.4)} Withdraw</button>`
+          : stage === 'Invoice Pending' ? `<button class="btn btn-primary" data-inv-new="${dr.id}">Submit Invoice</button>`
           : '<button class="link" data-ir-open="' + id + '">View</button>'}</td></tr>`; }).join('')}</tbody>
     </table></div>` : ''}`;
 }
 function irViewModal(o, id) {
-  const items = irItems(o.no, id).sort((a, b) => (a.item || 1) - (b.item || 1));
+  const items = irItems(o.no, id);
   if (!items.length) return toast(`${id} no longer exists`);
+  ui.irOpen = id;
   const r0 = items[0], done = items.filter(isRecorded), stOverall = irOverall(items), stage = irStage(items);
-  const drs = items.map(r => drOfIr(r)).filter(Boolean);
+  const dr = drOfIr(r0);
+  const a = r0.appr || { chain: IR_CHAIN, level: 0, state: 'pending', history: [], clar: [] };
   // group the items by PO line item
   const byLine = new Map();
   items.forEach(r => { const f = findMc(o, r.mcId); const k = r.lineRef; if (!byLine.has(k)) byLine.set(k, { l: f?.l || o.lines.find(x => x.ref === r.lineRef), rows: [] }); byLine.get(k).rows.push({ r, m: f?.m }); });
-  // Timeline: App Started → Approver (Rahul Verma) → what happened after approval
+  // Timeline: App Started → each approver in the chain → what happened after approval
   const created = new Date(r0.createdAt);
-  const decision = r0.declinedAt ? 'declined' : r0.approvedAt ? 'approved' : 'pending';
-  const tl = [
-    { st:'approved', lb:'App Started', nm:`Submitted by ${r0.by || VENDOR.name}`, ln:['Type: start', `Status: ${items.length} item${items.length > 1 ? 's' : ''} raised`, `Sent on: ${fmtDT(created)}`] },
-    { st:decision, lb:'Approver', nm:IR_APPROVER, ln:['Type: INSPECTION-REQUEST',
-        `Status: ${{ pending:'PENDING ON APPROVER', approved:'APPROVED', declined:'DECLINED' }[decision]}`, `Sent on: ${fmtDT(created)}`,
-        ...(decision === 'approved' ? [`Approved on: ${fmtDT(new Date(r0.approvedAt))}`] : decision === 'declined' ? [`Declined on: ${fmtDT(new Date(r0.declinedAt))}`] : [])],
-      cmt: r0.declineReason || r0.approvalRemarks },
-  ];
+  const tl = [{ st:'approved', lb:'App Started', nm:`Submitted by ${r0.by || VENDOR.name}`, ln:['Type: start', `Status: ${items.length} item${items.length > 1 ? 's' : ''} raised`, `Sent on: ${fmtDT(created)}`] }];
+  a.chain.forEach((k, i) => {
+    const h = a.history.find(x => (x.t === 'approved' || x.t === 'declined') && x.by === k);
+    const hold = [...a.history].reverse().find(x => x.t === 'hold' && x.by === k);
+    let st, status;
+    if (h) { st = h.t; status = h.t.toUpperCase(); }
+    else if (stOverall === 'Pending' && i === a.level) { st = 'pending'; status = a.state === 'hold' ? 'ON HOLD' : 'PENDING ON APPROVER'; }
+    else { st = 'upcoming'; status = stOverall === 'Withdrawn' || stOverall === 'Declined' ? 'NOT REQUIRED' : 'NOT STARTED'; }
+    tl.push({ st, lb: `Approver ${i + 1}`, nm: `${apprName(k)} · ${APPROVERS[k]?.role || ''}`,
+      ln: ['Type: INSPECTION-REQUEST', `Status: ${status}${h?.waive ? ' · INSPECTION WAIVED' : ''}`, ...(h ? [`${h.t === 'approved' ? 'Approved' : 'Declined'} on: ${fmtDT(new Date(h.at))}`] : [])],
+      cmt: h?.note || (st === 'pending' && a.state === 'hold' ? hold?.note : '') });
+  });
+  if (stOverall === 'Withdrawn') tl.push({ st:'declined', lb:'Withdrawn', nm:`by ${r0.withdrawnBy || VENDOR.name}`, ln:[`On: ${fmtDT(new Date(r0.withdrawnAt))}`], cmt: r0.withdrawReason });
   const later = [];
-  done.forEach(r => later.push({ at: r.inspectedAt ? parseISO(r.inspectedAt) : created, st: r.accepted > 0 ? 'approved' : 'declined', lb:'Inspection Recorded',
+  done.forEach(r => later.push({ at: r.inspectedAt ? parseISO(r.inspectedAt) : created, st: r.accepted > 0 ? 'approved' : 'declined', lb: r.inspectionWaived ? 'Inspection Waived' : 'Inspection Recorded',
     nm:`Item ${r.item || 1} · ${r.mcId}`, ln:[`Status: ${r.status.toUpperCase()}`, `${fmtN(r.accepted)} accepted · ${fmtN(r.rejected)} rejected`, ...(r.inspector ? [`Inspector: ${r.inspector}`] : [])] }));
-  drs.forEach(d => { later.push({ at: new Date(d.createdAt), st:'approved', lb:'Dispatch Request', nm:`${d.id} released by Hindalco`, ln:[`${fmtN(d.qty)} ${d.unit || ''} to ${d.shipTo}`, `Sent on: ${fmtDT(new Date(d.createdAt))}`] });
-    if (d.asn) later.push({ at: new Date(d.asn.createdAt), st:'approved', lb:'ASN', nm:`${d.asn.id} created`, ln:[`Invoice ${d.asn.invoiceNo} · ${d.asn.transporter} · ${d.asn.vehicle}`, `Sent on: ${fmtDT(new Date(d.asn.createdAt))}`] }); });
-  later.sort((a, b) => a.at - b.at);
-  // until the approver acts, show the inspection step that follows as upcoming
-  if (decision === 'pending') later.push({ st:'upcoming', lb:'Inspection', nm:'Inspection Report', ln:['Status: NOT STARTED'] });
+  if (dr) {
+    later.push({ at: new Date(dr.createdAt), st:'approved', lb:'Dispatch Request', nm:`${dr.id} released by Hindalco`, ln:[`${unitTotals(dr.items, x => x.qty)} · dispatch by ${fmtD(parseISO(dr.dispatchBy))}`, `Sent on: ${fmtDT(new Date(dr.createdAt))}`] });
+    if (dr.invoice) later.push({ at: new Date(dr.invoice.createdAt), st:'approved', lb:'Invoice', nm:`${dr.invoice.no} submitted`, ln:[`INR ${fmtN(dr.invoice.amount)}`, `Sent on: ${fmtDT(new Date(dr.invoice.createdAt))}`] });
+  }
+  later.sort((x, y) => x.at - y.at);
+  if (stOverall === 'Pending' || stOverall === 'Report Pending') later.push({ st:'upcoming', lb:'Inspection', nm:'Inspection Report', ln:['Status: NOT STARTED'] });
   tl.push(...later);
   const dotIc = { approved: icon('check', 10, 3), declined: icon('x', 10, 3), pending: '', upcoming: '' };
   const dash = '<span class="faint">—</span>';
+  const canReply = stOverall === 'Pending';
   modal(`Inspection Request · ${id}`, `<div class="ir-view">
     <div class="sec">Summary</div>
     <div class="kv" style="grid-template-columns:repeat(4,1fr)">
-      <div><div class="k">Status</div><div class="v">${irChip(stOverall)}${stage !== stOverall ? ` ${irChip(stage)}` : ''}</div></div>
+      <div><div class="k">Status</div><div class="v">${irChip(stOverall)}${stage !== stOverall ? ` ${irChip(stage)}` : ''}${apprNote(r0)}</div></div>
       <div><div class="k">PO Number</div><div class="v">${o.no}</div></div>
       <div><div class="k">Billing Location</div><div class="v">${esc(OFFICES[o.office].name)}</div></div>
       <div><div class="k">Raised On</div><div class="v">${fmtDT(new Date(r0.createdAt))}</div></div>
       <div><div class="k">Raised By</div><div class="v">${esc(r0.by || VENDOR.name)}</div></div>
       <div><div class="k">Proposed Inspection Date</div><div class="v">${fmtD(parseISO(r0.inspDate))}</div></div>
       <div><div class="k">Items / MCs / Line Items</div><div class="v">${items.length} / ${new Set(items.map(r => r.mcId)).size} / ${byLine.size}</div></div>
-      <div><div class="k">Approved</div><div class="v">${r0.approvedAt ? fmtDT(new Date(r0.approvedAt)) : '<span class="faint">Awaiting approval</span>'}</div></div>
+      <div><div class="k">Approved</div><div class="v">${r0.approvedAt ? fmtDT(new Date(r0.approvedAt)) : stOverall === 'Pending' ? '<span class="faint">In approval</span>' : dash}</div></div>
       <div><div class="k">Inspected Items</div><div class="v">${done.length} of ${items.length}</div></div>
+      <div><div class="k">Dispatch Request</div><div class="v">${dr ? `<button class="mc-id" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}` : dash}</div></div>
     </div>
     <div class="strip" style="grid-template-columns:repeat(4,1fr)">
       <div><div class="k">Inspection Qty</div><div class="v">${unitTotals(items, r => r.qty)}</div></div>
       <div><div class="k">Accepted</div><div class="v" style="color:var(--green-600)">${done.length ? unitTotals(done, r => r.accepted) : '—'}</div></div>
       <div><div class="k">Rejected</div><div class="v" style="color:${done.some(r => r.rejected) ? 'var(--red)' : 'inherit'}">${done.length ? unitTotals(done, r => r.rejected) : '—'}</div></div>
-      <div class="hi"><div class="k">In Dispatch Requests</div><div class="v">${drs.length ? unitTotals(drs, d => d.qty) : '—'}</div></div>
+      <div class="hi"><div class="k">In Dispatch Request</div><div class="v">${dr ? unitTotals(dr.items, x => x.qty) : '—'}</div></div>
     </div>
 
     <div class="sec">Inspection Details</div>
@@ -911,13 +967,13 @@ function irViewModal(o, id) {
       <div class="ir-line-h"><div class="code">${l ? l.code : rows[0].r.lineCode}</div>
         ${l ? `<span class="m">Item Ref <b>${l.ref}</b></span><span class="m">Product Code <b>${l.productCode}</b></span><span class="m">HSN <b>${l.hsn}</b></span>
         <span class="m">PO Qty <b>${fmtN(l.qty)}${l.unit ? ` ${l.unit}` : ''}</b></span><span class="m">Unit Price <b>INR ${fmtN(l.price)}</b></span>
-        <span class="m">Cleared <b>${fmtN(mcAlloc(l))}</b> in ${l.mcs.length} MC${l.mcs.length > 1 ? 's' : ''}</span>
-        <span class="m">In this IR <b>${fmtN(r2(rows.reduce((a, x) => a + x.r.qty, 0)))}</b> across ${rows.length} schedule${rows.length > 1 ? 's' : ''}</span>` : ''}</div>
+        <span class="m">Cleared <b>${fmtN(mcAlloc(l))}</b> in ${liveMcs(l).length} MC${liveMcs(l).length === 1 ? '' : 's'}</span>
+        <span class="m">In this IR <b>${fmtN(r2(rows.reduce((s, x) => s + x.r.qty, 0)))}</b> across ${rows.length} schedule${rows.length > 1 ? 's' : ''}</span>` : ''}</div>
       ${l ? `<div class="desc">${esc(l.desc)}</div>` : ''}
       <div style="overflow-x:auto"><table class="mini">
         <thead><tr><th>Item</th><th>MC ID</th><th>MC Cleared Qty</th><th>Shipping Location</th><th>Earliest Delivery</th><th>MC Released On</th>
-          <th>Inspection Qty</th><th>Accepted</th><th>Rejected</th><th>Status</th><th>Inspection</th><th>Dispatch Request / ASN</th></tr></thead>
-        <tbody>${rows.map(({ r, m }) => { const dr = drOfIr(r), insp = isRecorded(r); return `<tr>
+          <th>Inspection Qty</th><th>Accepted</th><th>Rejected</th><th>Status</th><th>Inspection</th></tr></thead>
+        <tbody>${rows.map(({ r, m }) => { const insp = isRecorded(r); return `<tr>
           <td>${r.item || 1}</td><td><b>${r.mcId}</b></td>
           <td>${m ? fmtN(m.qty) : dash}</td>
           <td style="white-space:normal;min-width:160px">${m ? `${esc(mcLoc(m).name)}<div class="faint">${esc(mcLoc(m).addr)}</div>` : dash}</td>
@@ -926,32 +982,48 @@ function irViewModal(o, id) {
           <td>${insp ? `<b style="color:var(--green-600)">${fmtN(r.accepted)}</b>` : dash}</td>
           <td>${insp ? `<b style="color:${r.rejected ? 'var(--red)' : 'inherit'}">${fmtN(r.rejected)}</b>` : dash}</td>
           <td>${irChip(r.status)}</td>
-          <td style="white-space:normal;min-width:130px">${insp ? `${r.inspectedAt ? fmtD(parseISO(r.inspectedAt)) : ''}${r.inspector ? `<div class="faint">${esc(r.inspector)}</div>` : ''}${r.inspRemarks ? `<div class="faint">“${esc(r.inspRemarks)}”</div>` : ''}` : `<span class="faint">${r.status === 'Pending' ? 'Awaiting approval' : 'Awaiting inspection report'}</span>`}</td>
-          <td style="white-space:normal;min-width:150px">${dr ? `<button class="mc-id" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}
-            <div class="faint">${fmtN(dr.qty)} · by ${fmtD(parseISO(dr.dispatchBy))} · ${dr.mode}</div>${dr.asn ? `<div class="faint">${dr.asn.id} · ${esc(dr.asn.vehicle)}</div>` : ''}`
-            : insp ? (r.accepted > 0 ? '<span class="faint">Awaiting dispatch request</span>' : '<span class="faint">Nothing accepted</span>') : dash}</td></tr>`; }).join('')}</tbody>
+          <td style="white-space:normal;min-width:130px">${insp ? `${r.inspectedAt ? fmtD(parseISO(r.inspectedAt)) : ''}${r.inspector ? `<div class="faint">${esc(r.inspector)}</div>` : ''}${r.inspRemarks ? `<div class="faint">“${esc(r.inspRemarks)}”</div>` : ''}`
+            : `<span class="faint">${r.status === 'Pending' ? 'Awaiting approval' : r.status === 'Report Pending' ? 'Awaiting inspection report' : '—'}</span>`}</td></tr>`; }).join('')}</tbody>
       </table></div></div>`).join('')}
 
+    <div class="sec">Clarifications</div>
+    <div class="clar">${(a.clar || []).map(c => `<div class="msg ${c.by === 'vendor' ? 'me' : ''}"><div class="h"><b>${c.by === 'vendor' ? 'You' : esc(apprName(c.by))}</b> · ${fmtDT(new Date(c.at))}</div>${esc(c.text)}</div>`).join('')
+      || '<div class="faint">No clarifications asked by Hindalco approvers.</div>'}</div>
+    ${canReply ? `<div class="clar-reply"><textarea class="inp" id="clarTxt" rows="2" placeholder="Message ${esc(apprName(a.chain[a.level]))} (current approver)"></textarea>
+      <button class="btn btn-primary" data-clar-send="${id}">Send</button></div>` : ''}
+
     <div class="sec">Timeline</div>
-    <div class="atl-legend"><span><i style="background:var(--blue)"></i>Pending on Approver</span><span><i style="background:#2F9E62"></i>Approved by the Approver</span><span><i style="background:var(--red)"></i>Declined by the Approver</span></div>
+    <div class="atl-legend"><span><i style="background:var(--blue)"></i>Pending on Approver</span><span><i style="background:#2F9E62"></i>Approved / done</span><span><i style="background:var(--red)"></i>Declined / withdrawn</span></div>
     <div class="atl">${tl.map(x => `<div class="atl-item"><span class="atl-dot ${x.st}">${dotIc[x.st]}</span>
       <div class="lb">${esc(x.lb)}</div><div class="nm">${esc(x.nm)}</div>
       <div class="ln">${x.ln.map(l => `<div>${esc(l)}</div>`).join('')}</div>${x.cmt ? `<div class="cmt">“${esc(x.cmt)}”</div>` : ''}</div>`).join('')}</div>
   </div>`,
-    `${irDeletable(o.no, id) ? `<button class="btn btn-ghost" data-ir-del="${id}" style="margin-right:auto;color:var(--red);border-color:#F3C9C9">${icon('trash', 10, 2.2)} Delete</button>` : ''}
+    `${irWithdrawable(o.no, id) ? `<button class="btn btn-ghost" data-ir-wd="${id}" style="margin-right:auto;color:var(--red);border-color:#F3C9C9">${icon('back', 10, 2.4)} Withdraw</button>` : ''}
      <button class="btn btn-ghost" data-ir-csv="${id}">${icon('download', 10, 2.2)} Download</button>
+     ${stage === 'Invoice Pending' ? `<button class="btn btn-primary" data-inv-new="${dr.id}">Submit Invoice</button>` : ''}
      <button class="btn btn-primary" data-close-btn>Close</button>`, 'x');
 }
+/* vendor answers an approver's clarification; the approver sees it on the Employee Portal */
+function sendClar(o, id) {
+  const ta = document.getElementById('clarTxt'), text = ta?.value.trim();
+  if (!text) return ta?.focus();
+  const all = readIRs(), at = new Date().toISOString();
+  all.forEach(r => { if (r.po === o.no && r.id === id && r.appr) r.appr = { ...r.appr, clar: [...(r.appr.clar || []), { by: 'vendor', at, text }] }; });
+  writeIRs(all);
+  irViewModal(o, id);
+  toast('Message sent to the approver');
+}
 function irCsv(o, id) {
-  const items = irItems(o.no, id).sort((a, b) => (a.item || 1) - (b.item || 1));
-  const head = ['IR','Item','PO','Line Item','Item Ref','MC ID','MC Cleared Qty','Shipping Location','Earliest Delivery','Inspection Qty','UOM','Accepted','Rejected','Status','Inspected On','Inspector','Dispatch Request','ASN'];
-  const rows = items.map(r => { const f = findMc(o, r.mcId), dr = drOfIr(r); return [r.id, r.item || 1, o.no, r.lineCode, r.lineRef, r.mcId, f ? f.m.qty : '',
+  const items = irItems(o.no, id);
+  const dr = drOfIr(items[0]);
+  const head = ['IR','Item','PO','Line Item','Item Ref','MC ID','MC Cleared Qty','Shipping Location','Earliest Delivery','Inspection Qty','UOM','Accepted','Rejected','Status','Inspected On','Inspector','Dispatch Request','Invoice'];
+  const rows = items.map(r => { const f = findMc(o, r.mcId); return [r.id, r.item || 1, o.no, r.lineCode, r.lineRef, r.mcId, f ? f.m.qty : '',
     f ? mcLoc(f.m).name : '', f ? fmtD(f.m.date) : '', r.qty, r.unit || '', r.accepted ?? '', r.rejected ?? '', r.status, r.inspectedAt || '', r.inspector || '',
-    dr ? dr.id : '', dr?.asn ? dr.asn.id : '']; });
+    dr ? dr.id : '', dr?.invoice ? dr.invoice.no : '']; });
   const csv = [head, ...rows].map(x => x.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `${id}.csv`; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  const el = document.createElement('a');
+  el.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); el.download = `${id}.csv`; el.click();
+  setTimeout(() => URL.revokeObjectURL(el.href), 1000);
   toast(`${id} downloaded`);
 }
 
@@ -980,30 +1052,34 @@ function selBar(o) {
     <button class="btn btn-primary" data-ir-bar>${icon('plus', 10, 2.6)} Create Inspection Request</button></div>`;
 }
 
-/* Manufacturing Clearance released by the buyer — vendor selects one or more to raise an Inspection Request */
+/* Manufacturing Clearance released by the buyer — vendor selects one or more to raise an Inspection Request.
+   A clearance withdrawn by Hindalco stays listed (greyed out) and can't be selected. */
 function mcRow(o, l, i) {
   syncSel(o);
   const alloc = mcAlloc(l), pct = Math.min(100, alloc / l.qty * 100);
   const avail = l.mcs.filter(m => mcAvail(o, m) > 0);
   const allOn = avail.length > 0 && avail.every(m => ui.irSel.has(m.id));
+  const wd = l.mcs.length - liveMcs(l).length;
   return `<tr class="mc-row"><td colspan="10">
-    <button class="mc-toggle" data-mc="${i}">${icon('truck', 11, 2)} MANUFACTURING CLEARANCE (${l.mcs.length}) ${icon(l.mcOpen ? 'up' : 'eye', 10, 2.2)}</button>
+    <button class="mc-toggle" data-mc="${i}">${icon('truck', 11, 2)} MANUFACTURING CLEARANCE (${liveMcs(l).length}) ${icon(l.mcOpen ? 'up' : 'eye', 10, 2.2)}</button>
     <span class="mc-meter"><span style="width:${pct}%"></span></span>
-    <span class="muted">${fmtN(alloc)} of ${fmtN(l.qty)} cleared for dispatch${alloc < l.qty ? ` · <b>${fmtN(r2(l.qty - alloc))} awaiting clearance</b>` : ''}</span>
-    ${l.mcOpen ? `<div class="mc-hint">Tick one or more clearances — across any line items of this PO — to merge them into one Inspection Request. Click an MC ID for its details.</div>
+    <span class="muted">${fmtN(alloc)} of ${fmtN(l.qty)} cleared for dispatch${alloc < l.qty ? ` · <b>${fmtN(r2(l.qty - alloc))} awaiting clearance</b>` : ''}${wd ? ` · ${wd} withdrawn` : ''}</span>
+    ${l.mcOpen ? `<div class="mc-hint">Clearances marked “Not required” need no inspection — Hindalco sends the Dispatch Request directly. Tick one or more other clearances — across any line items of this PO — to merge them into one Inspection Request. Click an MC ID for its details.</div>
       <table class="mini"><thead><tr><th style="width:26px"><input type="checkbox" class="mc-cb" data-irsel-line="${i}" ${allOn ? 'checked' : ''} ${avail.length ? '' : 'disabled'} aria-label="Select all clearances of ${l.code}"></th>
         <th>MC ID</th><th>Cleared Qty</th><th>Shipping Location</th><th>Shipping Address</th><th>Earliest Delivery Date</th><th>Released On</th><th>Inspection</th><th>Status</th></tr></thead>
       <tbody>${l.mcs.map((m, k) => {
-        const irs = irsOf(o, m), s = irSummary(m, irs), on = ui.irSel.has(m.id);
-        return `<tr class="${on ? 'sel' : ''}"><td><input type="checkbox" class="mc-cb" data-irsel="${m.id}" ${on ? 'checked' : ''}
-            ${s.available > 0 ? '' : 'disabled title="The full cleared quantity is accepted or under inspection"'} aria-label="Select ${m.id}"></td>
+        const irs = irsOf(o, m), s = irSummary(m, irs), on = ui.irSel.has(m.id), w = isWithdrawnMc(m), direct = !irReq(m), dr = direct ? drOfMc(o, m.id) : null;
+        return `<tr class="${on ? 'sel' : ''} ${w ? 'wd' : ''}"><td><input type="checkbox" class="mc-cb" data-irsel="${m.id}" ${on ? 'checked' : ''}
+            ${s.available > 0 ? '' : `disabled title="${w ? 'Withdrawn by Hindalco' : direct ? 'Inspection not required' : 'The full cleared quantity is accepted or under inspection'}"`} aria-label="Select ${m.id}"></td>
         <td><button class="mc-id" data-mcopen="${i}:${k}" title="View clearance">${m.id} ${icon('chevR', 9, 2.6)}</button></td>
         <td>${fmtN(m.qty)}${l.unit ? ` <span class="faint">${l.unit}</span>` : ''}</td><td>${esc(mcLoc(m).name)}</td>
         <td class="muted" style="max-width:240px;white-space:normal">${esc(mcLoc(m).addr)}</td><td>${fmtD(m.date)}</td>
         <td>${m.createdAt ? fmtDT(m.createdAt) : '-'}</td>
-        <td style="white-space:normal">${irs.length ? `<b>${irs.length}</b> request${irs.length > 1 ? 's' : ''}<div class="faint">${fmtN(s.accepted)} accepted${s.pending ? ` · ${fmtN(s.pending)} under inspection` : ''}${s.available > 0 ? ` · ${fmtN(s.available)} available` : ''}</div>`
+        <td style="white-space:normal">${direct ? '<span class="chip st-IRW">Not required</span>' : irs.length ? `<b>${irs.length}</b> request${irs.length > 1 ? 's' : ''}<div class="faint">${fmtN(s.accepted)} accepted${s.pending ? ` · ${fmtN(s.pending)} under inspection` : ''}${s.available > 0 ? ` · ${fmtN(s.available)} available` : ''}</div>`
           : '<span class="faint">Not requested</span>'}</td>
-        <td><span class="chip st-OPEN">${m.status}</span></td></tr>
+        <td>${w ? `<span class="chip st-IRW">Withdrawn</span><div class="appr-note">${m.withdrawnAt ? fmtD(m.withdrawnAt) : ''}${m.withdrawReason ? ` · “${esc(m.withdrawReason)}”` : ''}</div>`
+          : direct ? `${irChip(mcDirectStage(o, m))}${dr ? `<div class="appr-note"><button class="mc-id" data-dr="${dr.id}">${dr.id}</button></div>` : ''}`
+          : `<span class="chip st-OPEN">${m.status}</span>`}</td></tr>
         ${irs.length ? `<tr class="ir-sub"><td colspan="9">${irTable(irs)}</td></tr>` : ''}`;
       }).join('')}</tbody></table>` : ''}
   </td></tr>`;
@@ -1011,9 +1087,11 @@ function mcRow(o, l, i) {
 
 /* MC detail pop-up — call to action to create the Inspection Request (with any other ticked clearances) */
 function mcModal(o, i, k) {
-  const l = o.lines[i], m = l.mcs[k], irs = irsOf(o, m), s = irSummary(m, irs);
+  const l = o.lines[i], m = l.mcs[k], irs = irsOf(o, m), s = irSummary(m, irs), w = isWithdrawnMc(m);
   const others = [...ui.irSel].filter(id => id !== m.id).length;
   modal(`Manufacturing Clearance · ${m.id}`, `
+    ${w ? `<div class="banner" style="margin-bottom:14px"><b>Withdrawn by Hindalco${m.withdrawnAt ? ` on ${fmtD(m.withdrawnAt)}` : ''}</b>
+      <span>${m.withdrawReason ? esc(m.withdrawReason) : 'This clearance is no longer valid. Do not manufacture or dispatch against it.'}</span></div>` : ''}
     <div class="kv">
       <div><div class="k">PO Number</div><div class="v">${o.no}</div></div>
       <div><div class="k">Line Item</div><div class="v">${l.code}</div></div>
@@ -1030,22 +1108,28 @@ function mcModal(o, i, k) {
       <div><div class="k">Rejected</div><div class="v" style="color:${s.rejected ? 'var(--red)' : 'inherit'}">${fmtN(s.rejected)}</div></div>
       <div class="hi"><div class="k">Available for Inspection</div><div class="v">${fmtN(s.available)}</div></div>
     </div>
-    <div class="sub-h">Inspection Requests</div>
-    ${irs.length ? irTable(irs) : '<div class="faint" style="padding:6px 0 2px">No Inspection Request raised against this clearance yet.</div>'}`,
+    ${!irReq(m) ? `<div class="sub-h">Dispatch</div><div style="padding:4px 0 2px;font-size:11px">Inspection is <b>not required</b> for this clearance. Status: ${irChip(mcDirectStage(o, m))}
+      ${drOfMc(o, m.id) ? ` · <button class="mc-id" data-dr="${drOfMc(o, m.id).id}">${drOfMc(o, m.id).id}</button>` : ' · awaiting Dispatch Request from Hindalco'}</div>`
+    : `<div class="sub-h">Inspection Requests</div>
+    ${irs.length ? irTable(irs) : '<div class="faint" style="padding:6px 0 2px">No Inspection Request raised against this clearance yet.</div>'}`}`,
     `<button class="btn btn-ghost" data-close-btn>Close</button>
-     <button class="btn btn-primary" data-ir-new="${m.id}" ${s.available > 0 ? '' : 'disabled title="The full cleared quantity is accepted or under inspection"'}>${icon('plus', 11, 2.6)} Create Inspection Request${others ? ` (+${others} selected)` : ''}</button>`, true);
+     ${!irReq(m) ? '' : `<button class="btn btn-primary" data-ir-new="${m.id}" ${s.available > 0 ? '' : `disabled title="${w ? 'Withdrawn by Hindalco' : 'The full cleared quantity is accepted or under inspection'}"`}>${icon('plus', 11, 2.6)} Create Inspection Request${others ? ` (+${others} selected)` : ''}</button>`}`, true);
 }
 
 /* ---------- Intermediate screen: every item of the selected clearances, one row per unique MC ---------- */
 let irDraft = null;
 function irMergeModal(o, ids) {
-  ids = [...new Set(ids)].filter(id => { const f = findMc(o, id); return f && mcAvail(o, f.m) > 0; });
+  const noInsp = [...new Set(ids)].filter(id => { const f = findMc(o, id); return f && !irReq(f.m); });
+  if (noInsp.length) toast(`Inspection is not required for ${noInsp.join(', ')} — Hindalco will send the Dispatch Request directly`);
+  ids = [...new Set(ids)].filter(id => { const f = findMc(o, id); return f && irReq(f.m) && mcAvail(o, f.m) > 0; });
+  if (!ids.length && noInsp.length) return;
   if (!ids.length) return toast('Select at least one clearance with quantity available for inspection');
   irDraft = { po: o.id, ids, qty: Object.fromEntries(ids.map(id => [id, mcAvail(o, findMc(o, id).m)])) };
   const earliest = new Date(Math.min(...ids.map(id => findMc(o, id).m.date.getTime())));
   modal('Create Inspection Request', `
     <div class="muted" style="margin:-2px 0 12px;font-size:11px">PO <b style="color:var(--text)">${o.no}</b> · the clearances below are merged into one Inspection Request.
-      Each clearance is a separate item with its own inspection quantity.</div>
+      Each clearance is a separate item with its own inspection quantity. On submit it goes for approval to
+      ${IR_CHAIN.map(k => `<b style="color:var(--text)">${apprName(k)}</b> (${APPROVERS[k].role})`).join(' → ')}.</div>
     <div id="irItems"></div>
     <div class="grid2">
       <div class="field"><label for="irDate">Proposed Inspection Date *</label>
@@ -1064,7 +1148,7 @@ function irMergeModal(o, ids) {
         <textarea class="inp" id="irRemarks" rows="2" placeholder="Anything the inspector should know"></textarea></div>
     </div>`,
     `<button class="btn btn-ghost" data-close-btn>Cancel</button>
-     <button class="btn btn-primary" data-ir-submit>Submit Inspection Request</button>`, true);
+     <button class="btn btn-primary" data-ir-submit>Submit for Approval</button>`, true);
   drawIrItems(o);
 }
 function drawIrItems(o, errors = {}) {
@@ -1101,8 +1185,9 @@ function submitMergedIR(o) {
   const err = (id, msg) => { $(id + 'Err').hidden = !msg; $(id + 'Err').textContent = msg || ''; $(id).classList.toggle('bad', !!msg); return !msg; };
   const rowErr = {};
   irDraft.ids.forEach(id => {
-    const q = +irDraft.qty[id], av = mcAvail(o, findMc(o, id).m);
-    if (!(q > 0)) rowErr[id] = 'Enter a quantity > 0';
+    const q = +irDraft.qty[id], m = findMc(o, id).m, av = mcAvail(o, m);
+    if (!irReq(m)) rowErr[id] = 'Inspection not required for this clearance';
+    else if (!(q > 0)) rowErr[id] = 'Enter a quantity > 0';
     else if (q > av) rowErr[id] = `Max ${fmtN(av)}`;
   });
   const date = $('irDate').value;
@@ -1118,123 +1203,136 @@ function submitMergedIR(o) {
   const used = new Set(all.filter(r => r.po === o.no).map(r => r.id));
   let seq = 1, id;
   do { id = `IR-${o.no.slice(-5)}-${String(seq++).padStart(3, '0')}`; } while (used.has(id));
-  const common = { id, po: o.no, inspDate: date, location: $('irLoc').value.trim(), contact: $('irContact').value.trim(), phone: $('irPhone').value.trim(),
+  // everything the Employee Portal approver and the Buyer need travels with the record
+  const common = { id, po: o.no, office: OFFICES[o.office].name, inspDate: date, location: $('irLoc').value.trim(), contact: $('irContact').value.trim(), phone: $('irPhone').value.trim(),
     docs: [...$('irDocs').files].map(f => f.name), remarks: $('irRemarks').value.trim(), createdAt: new Date().toISOString(), by: VENDOR.name,
-    status: 'Pending', accepted: null, rejected: null, items: irDraft.ids.length };
+    vendor: { name: VENDOR.name, gstin: VENDOR.gstin, pan: VENDOR.pan, code: VENDOR.code, addr: VENDOR.addr.join(', '), email: VENDOR.email, phone: VENDOR.phone, contact: VENDOR.contact },
+    status: 'Pending', accepted: null, rejected: null, items: irDraft.ids.length,
+    appr: { chain: IR_CHAIN, level: 0, state: 'pending', history: [], clar: [] } };
   irDraft.ids.forEach((mcId, n) => {
-    const { l } = findMc(o, mcId);
-    all.push({ ...common, key: `${id}#${n + 1}`, item: n + 1, mcId, lineRef: l.ref, lineCode: l.code, unit: l.unit || '', qty: r2(+irDraft.qty[mcId]) });
+    const { l, m } = findMc(o, mcId);
+    all.push({ ...common, key: `${id}#${n + 1}`, item: n + 1, mcId, lineRef: l.ref, lineCode: l.code, lineDesc: l.desc, unit: l.unit || '',
+      mcQty: m.qty, mcLocation: mcLoc(m).name, qty: r2(+irDraft.qty[mcId]) });
   });
   writeIRs(all);
   const n = irDraft.ids.length;
   irDraft.ids.forEach(x => ui.irSel.delete(x));
   irDraft = null;
   closeModal(); rerender();
-  toast(`${id} submitted with ${n} item${n > 1 ? 's' : ''} · Hindalco has been notified`);
+  toast(`${id} submitted with ${n} item${n > 1 ? 's' : ''} · pending approval with ${apprName(IR_CHAIN[0])}`);
 }
-/* Dispatch Requests section on the PO + ASN creation */
+
+/* ---------- Dispatch Requests (one per Inspection Request) + invoice submission ---------- */
+const shipTos = d => [...new Set(d.items.map(x => x.shipTo))];
 function dispatchSection(o) {
   const drs = drsOf(o);
   if (!drs.length) return '';
   return `<div class="sec-lbl" id="dispatch">DISPATCH REQUESTS</div>
     <div class="table-wrap"><table class="simple dr-table">
-      <thead><tr><th style="text-align:left">Dispatch Request</th><th>Line Item</th><th>MC / IR</th><th>Dispatch Qty</th><th style="text-align:left">Ship To</th>
+      <thead><tr><th style="text-align:left">Dispatch Request</th><th>Inspection Request</th><th style="text-align:left">Items (MC · Line)</th><th>Dispatch Qty</th><th style="text-align:left">Ship To</th>
         <th>Dispatch By</th><th>Mode</th><th>Status</th><th>Action</th></tr></thead>
       <tbody>${drs.map(d => `<tr>
         <td style="text-align:left"><button class="mc-id" data-dr="${d.id}">${d.id} ${icon('chevR', 9, 2.6)}</button><div class="faint">${fmtDT(new Date(d.createdAt))}</div></td>
-        <td>${d.lineCode}</td><td>${d.mcId}<div class="faint">${d.irId}</div></td><td><b>${fmtN(d.qty)}</b></td>
-        <td style="text-align:left;white-space:normal;max-width:200px">${esc(d.shipTo)}</td>
-        <td>${fmtD(parseISO(d.dispatchBy))}</td><td>${d.mode}</td><td>${drChip(d.status)}${d.asn ? `<div class="faint" style="margin-top:3px">${d.asn.id}</div>` : ''}</td>
-        <td>${d.asn ? `<button class="link" data-dr="${d.id}">View ASN</button>`
-          : `<button class="btn btn-primary" data-asn-new="${d.id}">${icon('plus', 10, 2.6)} Create ASN</button>`}</td></tr>`).join('')}</tbody>
+        <td>${d.irId ? `<button class="mc-id" data-ir-open="${d.irId}">${d.irId}</button>` : '<span class="faint">Not required</span>'}</td>
+        <td style="text-align:left;white-space:normal;max-width:220px">${d.items.map(x => `${x.mcId} · ${x.lineCode}`).join('<br>')}</td>
+        <td><b>${unitTotals(d.items, x => x.qty)}</b></td>
+        <td style="text-align:left;white-space:normal;max-width:200px">${shipTos(d).map(esc).join('<br>')}</td>
+        <td>${fmtD(parseISO(d.dispatchBy))}</td><td>${d.mode}</td><td>${drChip(d.status)}${d.invoice ? `<div class="faint" style="margin-top:3px">${esc(d.invoice.no)}</div>` : ''}</td>
+        <td>${d.invoice ? `<button class="link" data-dr="${d.id}">View Invoice</button>`
+          : `<button class="btn btn-primary" data-inv-new="${d.id}">${icon('plus', 10, 2.6)} Submit Invoice</button>`}</td></tr>`).join('')}</tbody>
     </table></div>`;
 }
 function drModal(drId) {
   const d = readDRs().find(x => x.id === drId);
   if (!d) return;
-  const a = d.asn;
+  const v = d.invoice;
   modal(`Dispatch Request · ${d.id}`, `
     <div class="kv">
       <div><div class="k">PO Number</div><div class="v">${d.po}</div></div>
-      <div><div class="k">Line Item</div><div class="v">${d.lineCode}</div></div>
+      <div><div class="k">Inspection Request</div><div class="v">${d.irId || '<span class="faint">Not required</span>'}</div></div>
       <div><div class="k">Status</div><div class="v">${drChip(d.status)}</div></div>
-      <div><div class="k">Manufacturing Clearance</div><div class="v">${d.mcId}</div></div>
-      <div><div class="k">Inspection Request</div><div class="v">${d.irId}</div></div>
-      <div><div class="k">Dispatch Qty (accepted)</div><div class="v">${fmtN(d.qty)}</div></div>
       <div><div class="k">Dispatch By</div><div class="v">${fmtD(parseISO(d.dispatchBy))}</div></div>
       <div><div class="k">Mode of Transport</div><div class="v">${d.mode}</div></div>
       <div><div class="k">Freight</div><div class="v">${d.freight}</div></div>
     </div>
+    <div class="sub-h">Items to dispatch ${d.irId ? `(accepted in ${d.irId})` : `(full quantity of ${d.mcId} · inspection not required)`}</div>
+    <table class="mini merge" style="margin-bottom:14px"><thead><tr><th>#</th><th>MC ID</th><th>Line Item</th><th>Dispatch Qty</th><th>Ship To</th><th>Value incl. GST</th></tr></thead>
+      <tbody>${d.items.map((x, n) => `<tr><td>${n + 1}</td><td><b>${x.mcId}</b></td><td style="white-space:normal;max-width:220px"><b>${x.lineCode}</b><div class="faint">${esc((x.lineDesc || '').slice(0, 70))}</div></td>
+        <td><b>${fmtN(x.qty)}</b> ${x.unit || ''}</td><td style="white-space:normal;max-width:220px">${esc(x.shipTo)}<div class="faint">${esc(x.shipAddr || '')}</div></td>
+        <td>INR ${fmtN(r2(x.qty * x.price * (1 + x.gst / 100)))}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="3">Total</td><td>${unitTotals(d.items, x => x.qty)}</td><td></td><td>INR ${fmtN(drAmount(d))}</td></tr></tfoot></table>
     <div class="kv" style="grid-template-columns:1fr">
-      <div><div class="k">Ship To</div><div class="v">${esc(d.shipTo)}</div><div class="muted" style="margin-top:2px">${esc(d.shipAddr)}</div></div>
       <div><div class="k">Dispatch Instructions</div><div class="v" style="font-weight:400">${d.notes ? esc(d.notes) : '—'}</div></div>
     </div>
-    <div class="sub-h" style="border-top:1px solid var(--border);padding-top:12px">Advance Shipping Notice (ASN)</div>
-    ${a ? `<div class="kv">
-      <div><div class="k">ASN No.</div><div class="v">${a.id}</div></div>
-      <div><div class="k">Shipped Qty</div><div class="v">${fmtN(a.qty)}</div></div>
-      <div><div class="k">Invoice / Challan No.</div><div class="v">${esc(a.invoiceNo)}</div></div>
-      <div><div class="k">Dispatched On</div><div class="v">${fmtD(parseISO(a.dispatchDate))}</div></div>
-      <div><div class="k">Expected Delivery</div><div class="v">${fmtD(parseISO(a.eta))}</div></div>
-      <div><div class="k">Transporter</div><div class="v">${esc(a.transporter)}</div></div>
-      <div><div class="k">Vehicle No.</div><div class="v">${esc(a.vehicle)}</div></div>
-      <div><div class="k">LR / Docket No.</div><div class="v">${a.lr ? esc(a.lr) : '—'}</div></div>
-      <div><div class="k">E-way Bill No.</div><div class="v">${a.eway ? esc(a.eway) : '—'}</div></div>
-    </div>` : '<div class="faint">No ASN created yet.</div>'}`,
-    `<button class="btn btn-ghost" data-close-btn>Close</button>${a ? '' : `<button class="btn btn-primary" data-asn-new="${d.id}">${icon('plus', 11, 2.6)} Create ASN</button>`}`);
+    <div class="sub-h" style="border-top:1px solid var(--border);padding-top:12px">Invoice</div>
+    ${v ? `<div class="kv">
+      <div><div class="k">Invoice No.</div><div class="v">${esc(v.no)}</div></div>
+      <div><div class="k">Invoice Date</div><div class="v">${fmtD(parseISO(v.date))}</div></div>
+      <div><div class="k">Invoice Amount</div><div class="v">INR ${fmtN(v.amount)}</div></div>
+      <div><div class="k">Attachments</div><div class="v">${v.docs?.length ? v.docs.map(esc).join(', ') : '—'}</div></div>
+      <div><div class="k">Submitted On</div><div class="v">${fmtDT(new Date(v.createdAt))}</div></div>
+      <div><div class="k">Remarks</div><div class="v" style="font-weight:400">${v.remarks ? esc(v.remarks) : '—'}</div></div>
+    </div>` : '<div class="faint">No invoice submitted against this Dispatch Request yet.</div>'}`,
+    `<button class="btn btn-ghost" data-close-btn>Close</button>${v ? '' : `<button class="btn btn-primary" data-inv-new="${d.id}">${icon('plus', 11, 2.6)} Submit Invoice</button>`}`, true);
 }
-function asnForm(drId) {
+function invoiceForm(drId) {
   const d = readDRs().find(x => x.id === drId);
-  if (!d || d.asn) return;
-  const today = isoD(TODAY);
-  const f = (id, label, val = '', extra = '', full = false) => `<div class="field"${full ? ' style="grid-column:1/-1"' : ''}><label for="${id}">${label}</label>
-    <input class="inp" id="${id}" value="${esc(val)}" ${extra}><div class="err" id="${id}Err" hidden></div></div>`;
-  modal('Create ASN', `
+  if (!d || d.invoice) return;
+  const amt = drAmount(d), base = r2(d.items.reduce((a, x) => a + x.qty * x.price, 0));
+  modal('Submit Invoice', `
     <div class="kv">
       <div><div class="k">Dispatch Request</div><div class="v">${d.id}</div></div>
-      <div><div class="k">Line Item</div><div class="v">${d.lineCode}</div></div>
-      <div><div class="k">Dispatch By</div><div class="v">${fmtD(parseISO(d.dispatchBy))}</div></div>
+      <div><div class="k">${d.irId ? 'Inspection Request' : 'Manufacturing Clearance'}</div><div class="v">${d.irId || d.mcId}</div></div>
+      <div><div class="k">Dispatch Qty</div><div class="v">${unitTotals(d.items, x => x.qty)}</div></div>
+      <div><div class="k">Base Amount</div><div class="v">INR ${fmtN(base)}</div></div>
+      <div><div class="k">GST</div><div class="v">INR ${fmtN(r2(amt - base))}</div></div>
+      <div><div class="k">Total (as per PO rates)</div><div class="v">INR ${fmtN(amt)}</div></div>
     </div>
     <div class="grid2">
-      <div class="field"><label>Shipped Qty</label><input class="inp" value="${fmtN(d.qty)}" disabled>
-        <div class="hint">Equal to the dispatch request qty (accepted in ${d.irId})</div></div>
-      <div class="field"><label>Ship To</label><input class="inp" value="${esc(d.shipTo)}" disabled></div>
-      ${f('asnInv', 'Invoice / Delivery Challan No. *', '')}
-      ${f('asnDate', 'Dispatch Date *', today, `type="date" min="${today}"`)}
-      ${f('asnEta', 'Expected Delivery Date *', isoD(new Date(TODAY.getTime() + 4 * 864e5)), `type="date" min="${today}"`)}
-      ${f('asnTrans', 'Transporter Name *', '')}
-      ${f('asnVeh', 'Vehicle No. *', '', 'placeholder="e.g. MH09 CD 4521"')}
-      ${f('asnLr', 'LR / Docket No.', '')}
-      ${f('asnEway', 'E-way Bill No.', '')}
+      <div class="field"><label for="invNo">Invoice No. *</label><input class="inp" id="invNo" placeholder="e.g. IFM/26-27/1201"><div class="err" id="invNoErr" hidden></div></div>
+      <div class="field"><label for="invDate">Invoice Date *</label><input class="inp" id="invDate" type="date" value="${isoD(TODAY)}"><div class="err" id="invDateErr" hidden></div></div>
+      <div class="field"><label for="invAmt">Invoice Amount (INR, incl. GST) *</label><input class="inp" id="invAmt" type="number" step="0.01" min="0" value="${amt}">
+        <div class="hint">Pre-filled from the PO rates for the dispatched quantity</div><div class="err" id="invAmtErr" hidden></div></div>
+      <div class="field"><label for="invDocs">Invoice Copy</label><input class="inp" id="invDocs" type="file" multiple style="padding-top:6px"></div>
+      <div class="field" style="grid-column:1/-1"><label for="invRemarks">Remarks</label><textarea class="inp" id="invRemarks" rows="2"></textarea></div>
     </div>`,
     `<button class="btn btn-ghost" data-dr="${d.id}" style="margin-right:auto">${icon('back', 10, 2.4)} Back</button>
      <button class="btn btn-ghost" data-close-btn>Cancel</button>
-     <button class="btn btn-primary" data-asn-submit="${d.id}">Submit ASN</button>`);
-  setTimeout(() => document.getElementById('asnInv')?.focus(), 30);
+     <button class="btn btn-primary" data-inv-submit="${d.id}">Submit Invoice</button>`);
+  setTimeout(() => document.getElementById('invNo')?.focus(), 30);
 }
-function submitAsn(drId) {
+function submitInvoice(drId) {
   const $ = id => document.getElementById(id);
   const err = (id, msg) => { $(id + 'Err').hidden = !msg; $(id + 'Err').textContent = msg || ''; $(id).classList.toggle('bad', !!msg); return !msg; };
-  const v = id => $(id).value.trim(), today = isoD(TODAY);
+  const v = id => $(id).value.trim();
   const ok = [
-    err('asnInv', v('asnInv') ? '' : 'Invoice / challan number is required'),
-    err('asnDate', !v('asnDate') ? 'Dispatch date is required' : v('asnDate') < today ? 'Date can’t be in the past' : ''),
-    err('asnEta', !v('asnEta') ? 'Expected delivery date is required' : v('asnEta') < v('asnDate') ? 'Must be on or after the dispatch date' : ''),
-    err('asnTrans', v('asnTrans') ? '' : 'Transporter name is required'),
-    err('asnVeh', v('asnVeh') ? '' : 'Vehicle number is required'),
+    err('invNo', v('invNo') ? '' : 'Invoice number is required'),
+    err('invDate', v('invDate') ? '' : 'Invoice date is required'),
+    err('invAmt', +v('invAmt') > 0 ? '' : 'Enter the invoice amount'),
   ].every(Boolean);
   if (!ok) return;
   const all = readDRs(), d = all.find(x => x.id === drId);
-  d.asn = { id: 'ASN-' + d.id.slice(3), qty: d.qty, invoiceNo: v('asnInv'), dispatchDate: v('asnDate'), eta: v('asnEta'),
-    transporter: v('asnTrans'), vehicle: v('asnVeh'), lr: v('asnLr'), eway: v('asnEway'), createdAt: new Date().toISOString() };
-  d.status = 'ASN Created';
+  if (d.invoice) { closeModal(); rerender(); return toast(`An invoice is already submitted against ${d.id}`); }
+  d.invoice = { no: v('invNo'), date: v('invDate'), amount: r2(+v('invAmt')), docs: [...$('invDocs').files].map(f => f.name), remarks: v('invRemarks'),
+    createdAt: new Date().toISOString() };
+  d.status = 'Invoice Submitted';
   writeDRs(all);
   closeModal(); rerender();
-  toast(`${d.asn.id} created against ${d.id}`);
+  toast(`Invoice ${d.invoice.no} submitted against ${d.id}`);
 }
 
 const rerender = () => { const y = scrollY; route(); scrollTo(0, y); };
-window.addEventListener('storage', e => { if (e.key === IR_STORE || e.key === DR_STORE) rerender(); });
+/* live updates from the Buyer / Employee portals; an open IR pop-up refreshes in place (keeping any half-typed message) */
+window.addEventListener('storage', e => {
+  if (e.key !== IR_STORE && e.key !== DR_STORE) return;
+  rerender();
+  const cur = byId(location.hash.split('/')[2] || 0);
+  if (ui.irOpen && cur && document.querySelector('.ir-view')) {
+    const draft = document.getElementById('clarTxt')?.value;
+    irViewModal(cur, ui.irOpen);
+    if (draft && document.getElementById('clarTxt')) document.getElementById('clarTxt').value = draft;
+  }
+});
 
 function grnModal(o, g) {
   const rows = o.lines.map(l => {
@@ -1293,16 +1391,17 @@ document.addEventListener('click', e => {
   if (d.mc && cur) { const l = cur.lines[+d.mc]; l.mcOpen = !l.mcOpen; const y = scrollY; route(); scrollTo(0, y); return; }
   if (d.grn && cur) { grnModal(cur, cur.grns[+d.grn]); return; }
   if (d.dr) { drModal(d.dr); return; }
-  if (d.asnNew) { asnForm(d.asnNew); return; }
-  if (d.asnSubmit) { submitAsn(d.asnSubmit); return; }
+  if (d.invNew) { invoiceForm(d.invNew); return; }
+  if (d.invSubmit) { submitInvoice(d.invSubmit); return; }
+  if (d.clarSend && cur) { sendClar(cur, d.clarSend); return; }
   if (d.mcopen && cur) { const [i, k] = d.mcopen.split(':').map(Number); mcModal(cur, i, k); return; }
   if (d.irNew && cur) { if (t.disabled) return; irMergeModal(cur, [d.irNew, ...ui.irSel]); return; }
   if ('irBar' in d && cur) { irMergeModal(cur, [...ui.irSel]); return; }
   if (d.irFilter && cur) { ui.irFilter = d.irFilter; rerender(); return; }
   if (d.irOpen && cur) { irViewModal(cur, d.irOpen); return; }
   if (d.irCsv && cur) { irCsv(cur, d.irCsv); return; }
-  if (d.irDel && cur) { irDeleteModal(cur, d.irDel); return; }
-  if (d.irDelOk && cur) { irDelete(cur, d.irDelOk); return; }
+  if (d.irWd && cur) { irWithdrawModal(cur, d.irWd); return; }
+  if (d.irWdOk && cur) { irWithdraw(cur, d.irWdOk); return; }
   if ('irClear' in d) { ui.irSel.clear(); rerender(); return; }
   if ('irSubmit' in d && cur && irDraft) { submitMergedIR(cur); return; }
   if (d.irrm && cur && irDraft) { irDraft.ids = irDraft.ids.filter(x => x !== d.irrm); delete irDraft.qty[d.irrm]; drawIrItems(cur); return; }
