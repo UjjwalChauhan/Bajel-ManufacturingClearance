@@ -206,6 +206,8 @@
   .act-app:hover{background:#D3EBDB}
   .act-hold{background:var(--primary);color:#fff;font-size:17px}
   .act-hold:hover{background:var(--primary-600)}
+  .act-waive{background:#fff;color:var(--primary);border:1.5px solid var(--primary);font-size:17px}
+  .act-waive:hover{background:#F3F1FD}
   .done-banner{grid-column:1/-1;display:flex;align-items:center;gap:10px;font-size:13px;padding:12px 14px;border-radius:5px}
   .rq-label{font-size:17px;margin-bottom:16px}
   .rq-card{display:flex;gap:16px;border:1px solid var(--border);border-radius:6px;padding:22px 18px;align-items:flex-start;font-size:13px;line-height:1.55}
@@ -433,9 +435,7 @@ const OFFICES = {
 const BILLING = 'Hindalco Industries Ltd, Renukoot PO: Renukoot, SONEBHADRA UP 231217';
 const TYPES = {
   po: { slug:'purchase-order', label:'Purchase Order', approval:'Purchase Order Approval' },
-  mc: { slug:'manufacturing-clearance', label:'Manufacturing Clearance', approval:'Manufacturing Clearance Approval' },
   ir: { slug:'inspection-request', label:'Inspection Request', approval:'Inspection Request Approval' },
-  dr: { slug:'dispatch-request', label:'Dispatch Request', approval:'Dispatch Request Approval' },
   bg: { slug:'bank-guarantee-onboard', label:'Bank Guarantee', approval:'Bank Guarantee Approval' },
 };
 const STAGE = { rahul:'MANAGER PENDING', priya:'QA PENDING', amit:'PLANT HEAD PENDING', meera:'TREASURY PENDING' };
@@ -471,60 +471,6 @@ function seed() {
     files:[pdf('Rate_Contract_RC-HIR-044.pdf')],
     history:[{ t:'start', by:'karan', at:AT(10,3,16,8) }] });
 
-  // ---- Manufacturing Clearances ----
-  add({ id:'r4', type:'mc', ref:'MC/13662356078/L1', title:'Aluminium Fluoride — 3 schedules', asker:'karan', vendor:'palriwal', office:'RKM', poNo:'13662356078',
-    chain:['rahul'], received:AT(10,5,11,48),
-    line:{ desc:'ALUMINIUM FLUORIDE;PURITY:90%', code:'301218020044', qty:3377.8, unit:'MT', rate:95250 },
-    schedules:[
-      { id:'MC-56078-006', qty:1500, office:'ADT_CHM_OU_Aditya Chemicals Stores', addr:'Lapanga, SAMBALPUR OD 768212', date:AT(11,1) },
-      { id:'MC-56078-007', qty:1500, office:'RKT_OU_Renukoot Carbon Plant', addr:'Renukoot, SONEBHADRA UP 231217', date:AT(11,10) },
-      { id:'MC-56078-008', qty:377.8, office:'MHN_OU_Mahan Aluminium Smelter', addr:'Bargawan, SINGRAULI MP 486886', date:AT(11,15) } ],
-    files:[pdf('Delivery_Plan_Q3.pdf')],
-    history:[{ t:'start', by:'karan', at:AT(10,5,11,47) }] });
-  add({ id:'r5', type:'mc', ref:'MC/13662310003/L3', title:'T-Slot Cylinder Sensor — 2 schedules', asker:'srinivas', vendor:'ifm', office:'RKT', poNo:'13662310003',
-    chain:['rahul'], received:AT(10,5,14,30),
-    line:{ desc:'SENSOR;TYP:T SLOT CYLINDER;PN:MK5117 MFR:IFM', code:'391215000373', qty:4, unit:'Nos', rate:4452 },
-    schedules:[
-      { id:'MC-10003-002', qty:2, office:'RKT_OU_Renukoot Carbon Plant', addr:'Renukoot, SONEBHADRA UP 231217', date:AT(10,29) },
-      { id:'MC-10003-003', qty:2, office:'RKT_OU_Renukoot Carbon Plant', addr:'Renukoot, SONEBHADRA UP 231217', date:AT(11,18) } ],
-    files:[],
-    history:[{ t:'start', by:'srinivas', at:AT(10,5,14,29) }] });
-
-  // ---- Inspection Requests (raised by vendors) ----
-  add({ id:'r6', type:'ir', ref:'IR-56078-01', title:'Pre-dispatch inspection · MC-56078-010', asker:'rakesh', vendor:'palriwal', office:'ADT', poNo:'13662356078',
-    chain:['priya','rahul'], received:AT(10,6,9,40),
-    lines:[{ mc:'MC-56078-010', desc:'CAUSTIC SODA LYE;CONC:48%', mcQty:1000, qty:1000, unit:'MT' }],
-    inspDate:AT(10,9), location:'Palriwal Industries, C-12 Industrial Area, Mirzapur 231001', contact:'Rakesh Palriwal · 9415012345',
-    files:[pdf('Test_Certificate_Batch_2291.pdf'), pdf('QAP_Caustic_Lye.pdf')],
-    history:[{ t:'start', by:'rakesh', at:AT(10,6,9,38) }] });
-  add({ id:'r7', type:'ir', ref:'IR-10003-01', title:'Inspection · MC-10003-002', asker:'sandeep', vendor:'ifm', office:'RKT', poNo:'13662310003',
-    chain:['priya','rahul'], received:AT(10,4,12,5),
-    lines:[{ mc:'MC-10003-002', desc:'SENSOR;TYP:T SLOT CYLINDER;PN:MK5117', mcQty:2, qty:2, unit:'Nos' }],
-    inspDate:AT(10,8), location:'IFM Electronic, Plot P-39/1, MIDC Gokulshirgaon, Kolhapur', contact:'Sandeep Patil · 9999006242',
-    files:[pdf('IFM_Test_Report_MK5117.pdf')],
-    history:[{ t:'start', by:'sandeep', at:AT(10,4,12,4) },
-             { t:'approved', by:'priya', at:AT(10,4,17,30), note:'Documents verified, physical inspection waived for catalogue item.' }],
-    level:1 });
-
-  // ---- Dispatch Requests ----
-  add({ id:'r8', type:'dr', ref:'DR-56078-01', title:'Dispatch · MC-56078-009 (Lot 1)', asker:'rakesh', vendor:'palriwal', office:'RKM', poNo:'13662356078',
-    chain:['rahul'], received:AT(10,6,8,15),
-    mc:'MC-56078-009', desc:'CAUSTIC SODA LYE;CONC:48%', qty:28.5, unit:'MT', mcQty:2000,
-    vehicle:'UP 63 AT 4417', transporter:'Shree Ganesh Roadlines', lr:'SGR/26/88412', ewb:'7810 4421 9935', invoice:'PIPL/26-27/0412',
-    dispatchDate:AT(10,7), eta:AT(10,9), to:'Bengaluru Regional Office, MG Road, Bengaluru 560001',
-    files:[pdf('Invoice_PIPL-0412.pdf'), pdf('E-Way_Bill.pdf'), pdf('Inspection_Release_Note.pdf')],
-    history:[{ t:'start', by:'rakesh', at:AT(10,6,8,14) }] });
-  add({ id:'r9', type:'dr', ref:'DR-08840-01', title:'Dispatch · MC-08840-001', asker:'rakesh', vendor:'palriwal', office:'ADT', poNo:'13662308840',
-    chain:['rahul'], received:AT(10,2,13,0),
-    mc:'MC-08840-001', desc:'CALCINED PETROLEUM COKE;GRADE:ANODE', qty:31, unit:'MT', mcQty:250,
-    vehicle:'OD 15 C 7781', transporter:'Kalinga Logistics', lr:'KL/7781/1092', ewb:'7810 4400 1287', invoice:'PIPL/26-27/0398',
-    dispatchDate:AT(10,3), eta:AT(10,6), to:'ADT_OU_Aditya Smelter Stores, Lapanga, SAMBALPUR OD 768212',
-    files:[pdf('Invoice_PIPL-0398.pdf')],
-    status:'hold',
-    history:[{ t:'start', by:'rakesh', at:AT(10,2,12,58) },
-             { t:'hold', by:'rahul', at:AT(10,2,18,20), note:'E-way bill vehicle number does not match the LR. Waiting for corrected copy.' }],
-    clar:[{ by:'rahul', at:AT(10,2,18,21), text:'E-way bill shows OD 15 C 7718, LR shows OD 15 C 7781. Please share the corrected e-way bill.' }] });
-
   // ---- Bank Guarantees ----
   add({ id:'r10', type:'bg', ref:'BG/0713623BG0001136', title:'PBG - Palriwal Industries', asker:'meera', vendor:'palriwal', office:'RKM', poNo:'13662356078',
     chain:['rahul'], received:AT(10,5,10,2), amount:4842000,
@@ -537,46 +483,17 @@ function seed() {
     beneficiary:'Hindalco Industries Limited', files:[pdf('ABG_HDFC_8887.pdf')],
     history:[{ t:'start', by:'meera', at:AT(9,29,15,28) }] });
 
-  // ---- Already completed by Rahul ----
-  add({ id:'r12', type:'mc', ref:'MC/13662309512/L1', title:'Graphite Electrodes — 1 schedule', asker:'karan', vendor:'palriwal', office:'MHN', poNo:'13662309512',
-    chain:['rahul'], received:AT(9,30,10,0), status:'approved', level:1,
-    line:{ desc:'ELECTRODE, GRAPHITE;DIA:600MM;GRADE:UHP', code:'301311000210', qty:40, unit:'MT', rate:412000 },
-    schedules:[{ id:'MC-09512-001', qty:40, office:'MHN_OU_Mahan Aluminium Smelter', addr:'Bargawan, SINGRAULI MP 486886', date:AT(10,20) }],
-    files:[],
-    history:[{ t:'start', by:'karan', at:AT(9,30,9,58) }, { t:'approved', by:'rahul', at:AT(9,30,15,12), note:'' }] });
-  add({ id:'r13', type:'dr', ref:'DR-10003-00', title:'Dispatch · MC-10003-001', asker:'sandeep', vendor:'ifm', office:'RKT', poNo:'13662310003',
-    chain:['rahul'], received:AT(9,28,11,0), status:'declined', level:0,
-    mc:'MC-10003-001', desc:'SWITCH, PROXIMITY;PN:IGS209', qty:1, unit:'Nos', mcQty:1,
-    vehicle:'Courier', transporter:'Blue Dart', lr:'BD 77120 4431', ewb:'—', invoice:'IFM/26/2231', dispatchDate:AT(9,29), eta:AT(10,2), to:'RKT_OU_Renukoot Stores',
-    files:[pdf('Invoice_IFM_2231.pdf')],
-    history:[{ t:'start', by:'sandeep', at:AT(9,28,10,58) }, { t:'declined', by:'rahul', at:AT(9,28,16,40), note:'Inspection Request not yet approved for this clearance.' }] });
-
   // ---- Raised by Rahul (shows under My Approvals) ----
   add({ id:'r14', type:'po', ref:'PO/13662310131', title:'Annual AMC — weighbridge calibration', asker:'rahul', vendor:'skf', office:'RKT',
     chain:['priya','amit'], category:'Services', received:AT(10,4,10,30),
     items:[{ name:'Weighbridge calibration (AMC)', code:'SRV-00412', hsn:'998346', desc:'Annual calibration of 4 weighbridges, NABL certified', qty:4, unit:'Nos', rate:68500, pr:'PR-591702', budget:'passed' }],
     files:[pdf('AMC_Scope.pdf')],
     history:[{ t:'start', by:'rahul', at:AT(10,4,10,28) }] });
-  add({ id:'r15', type:'mc', ref:'MC/13662310003/L1', title:'Proximity Switch — 1 schedule', asker:'rahul', vendor:'ifm', office:'RKT', poNo:'13662310003',
-    chain:['amit'], received:AT(10,3,9,10),
-    line:{ desc:'SWITCH, PROXIMITY;TYP:INDUCTIVE;PN:IGS209', code:'391222300179', qty:1, unit:'Nos', rate:5517 },
-    schedules:[{ id:'MC-10003-001', qty:1, office:'RKT_OU_Renukoot Stores', addr:'Renukoot, SONEBHADRA UP 231217', date:AT(10,20) }],
-    files:[],
-    history:[{ t:'start', by:'rahul', at:AT(10,3,9,8) }] });
-
-  // a few more pending with Priya
-  add({ id:'r16', type:'ir', ref:'IR-56078-02', title:'Pre-dispatch inspection · MC-56078-006', asker:'rakesh', vendor:'palriwal', office:'ADT', poNo:'13662356078',
-    chain:['priya','rahul'], received:AT(10,6,10,5),
-    lines:[{ mc:'MC-56078-006', desc:'ALUMINIUM FLUORIDE;PURITY:90%', mcQty:1500, qty:750, unit:'MT' }],
-    inspDate:AT(10,10), location:'Palriwal Industries, C-12 Industrial Area, Mirzapur 231001', contact:'Rakesh Palriwal · 9415012345',
-    files:[pdf('Test_Certificate_AlF3_Lot7.pdf')],
-    history:[{ t:'start', by:'rakesh', at:AT(10,6,10,3) }] });
   return R;
 }
 
 function amountOf(r) {
   if (r.type === 'po') return r.items.reduce((a, i) => a + i.qty * i.rate, 0) * 1.18;
-  if (r.type === 'mc') return r.schedules.reduce((a, s) => a + s.qty, 0) * r.line.rate;
   if (r.type === 'bg') return r.amount;
   return null;
 }
@@ -584,7 +501,7 @@ function amountOf(r) {
 /* =====================================================================
    State (persisted per browser so a demo survives refresh)
    ===================================================================== */
-const STORE = 'bajel.employee.v1';
+const STORE = 'bajel.employee.v2';
 const reviveDates = (k, v) => typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) ? new Date(v) : v;
 let REQS, me = 'rahul';
 try {
@@ -593,6 +510,68 @@ try {
 } catch (e) {}
 if (!REQS) REQS = seed();
 function save() { try { localStorage.setItem(STORE, JSON.stringify({ reqs: REQS, me })); } catch (e) {} }
+
+/* =====================================================================
+   Inspection Requests — live from the Vendor Portal through localStorage (same origin, e.g. Live Server).
+   The IR record is the source of truth: approvals, holds and clarifications made here are written back to it,
+   so the Vendor and Buyer portals show the status as it changes. A merged IR (several MC items) is one approval.
+   ===================================================================== */
+const IR_STORE = 'bajel.ir.v2';
+const readSharedIRs = () => { try { return JSON.parse(localStorage.getItem(IR_STORE) || 'null')?.irs || []; } catch (e) { return []; } };
+const writeSharedIRs = irs => { try { localStorage.setItem(IR_STORE, JSON.stringify({ irs })); } catch (e) {} };
+/* register the IR's vendor (and its contact person, who is the requester) so the existing lookups work */
+function vendorRefs(v) {
+  let vk = Object.keys(VENDORS).find(k => VENDORS[k].name.toUpperCase() === String(v.name).toUpperCase());
+  if (!vk) { vk = 'x:' + v.name; VENDORS[vk] = { name: v.name, trade: v.name, pan: v.pan || '—', gstin: v.gstin || '—', code: v.code || '—', addr: v.addr || '—' }; }
+  let pk = Object.keys(PEOPLE).find(k => PEOPLE[k].vendor && PEOPLE[k].name === v.contact);
+  if (!pk) { pk = 'vc:' + v.name; PEOPLE[pk] = { name: v.contact || v.name, email: v.email || '—', dept: 'Vendor · ' + v.name, office: '—', code: v.code ? 'V-' + v.code : '—', role: 'Vendor', vendor: true }; }
+  return [vk, pk];
+}
+function irReqs() {
+  const groups = new Map();
+  readSharedIRs().forEach(x => { const k = x.po + '|' + x.id; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+  return [...groups.values()].map(items => {
+    items.sort((a, b) => (a.item || 1) - (b.item || 1));
+    const r0 = items[0];
+    const a = r0.appr || { chain: ['priya', 'rahul'], level: 0, state: 'pending', history: [], clar: [] };
+    const [vk, pk] = vendorRefs(r0.vendor || { name: r0.by || 'Vendor', contact: r0.contact });
+    if (r0.office && !OFFICES[r0.office]) OFFICES[r0.office] = r0.office;
+    const who = by => by === 'vendor' ? pk : by;
+    const history = [{ t: 'start', by: pk, at: new Date(r0.createdAt) }, ...(a.history || []).map(h => ({ ...h, by: who(h.by), at: new Date(h.at) }))];
+    if (r0.status === 'Withdrawn') history.push({ t: 'withdrawn', by: pk, at: new Date(r0.withdrawnAt), note: r0.withdrawReason || '' });
+    return { id: `ir:${r0.po}:${r0.id}`, shared: true, irId: r0.id, type: 'ir', ref: r0.id, title: `Inspection · ${items.map(x => x.mcId).join(', ')}`,
+      asker: pk, vendor: vk, office: r0.office, poNo: r0.po, chain: a.chain, level: a.level,
+      status: r0.status === 'Withdrawn' ? 'withdrawn' : a.state, withdrawReason: r0.withdrawReason, received: new Date(r0.createdAt),
+      lines: items.map(x => ({ mc: x.mcId, code: x.lineCode, desc: x.lineDesc || '', loc: x.mcLocation, mcQty: x.mcQty, qty: x.qty, unit: x.unit || '' })),
+      inspDate: new Date(r0.inspDate + 'T00:00'), location: r0.location, contact: `${r0.contact} · ${r0.phone}`, remarks: r0.remarks,
+      files: (r0.docs || []).map(pdf), history, clar: (a.clar || []).map(c => ({ ...c, by: who(c.by), at: new Date(c.at) })) };
+  });
+}
+/* write an approver's action on a shared IR back to every item of it; false if the vendor withdrew it meanwhile */
+function commitIR(r) {
+  const out = by => by === r.asker ? 'vendor' : by;
+  const all = readSharedIRs(), items = all.filter(x => x.po === r.poNo && x.id === r.irId);
+  if (!items.length || items[0].status === 'Withdrawn') return false;
+  const appr = { chain: r.chain, level: r.level, state: r.status,
+    history: r.history.filter(h => !['start', 'withdrawn'].includes(h.t)).map(h => ({ t: h.t, by: out(h.by), at: new Date(h.at).toISOString(), note: h.note || '', ...(h.waive ? { waive: true } : {}) })),
+    clar: r.clar.map(c => ({ by: out(c.by), at: new Date(c.at).toISOString(), text: c.text })) };
+  const last = [...appr.history].reverse().find(h => h.t === 'approved' || h.t === 'declined');
+  items.forEach(x => {
+    x.appr = appr;
+    const waived = appr.history.find(h => h.waive);
+    if (r.status === 'approved' && x.status === 'Pending') {
+      Object.assign(x, { status: 'Report Pending', approvedAt: last.at, approvedBy: `${P(last.by).name} (${P(last.by).role})` });
+      if (waived) Object.assign(x, { status: 'Ready to Dispatch', accepted: x.qty, rejected: 0, inspectedAt: last.at.slice(0, 10), inspectionWaived: true,
+        inspector: `Waived by ${P(waived.by).name}`, inspRemarks: waived.note });
+    }
+    if (r.status === 'declined') Object.assign(x, { status: 'Declined', declinedAt: last.at, declinedBy: P(last.by).name, declineReason: last.note });
+  });
+  writeSharedIRs(all);
+  return true;
+}
+let SHARED = irReqs();
+const allReqs = () => [...REQS, ...SHARED];
+const findReq = id => allReqs().find(r => r.id === id);
 
 const ui = {
   page: 'home',          // home | team | mine | other
@@ -609,13 +588,14 @@ const P = k => PEOPLE[k];
 const currentApprover = r => r.chain[r.level];
 const isMine = r => (r.status === 'pending' || r.status === 'hold') && currentApprover(r) === me;
 const actedByMe = r => r.history.some(h => ['approved','declined'].includes(h.t) && h.by === me);
-const pendingCount = () => REQS.filter(r => r.status === 'pending' && isMine(r)).length;
-const holdCount = () => REQS.filter(r => r.status === 'hold' && isMine(r)).length;
+const pendingCount = () => allReqs().filter(r => r.status === 'pending' && isMine(r)).length;
+const holdCount = () => allReqs().filter(r => r.status === 'hold' && isMine(r)).length;
 
 function statusChip(r, forList = true) {
   if (r.status === 'approved') return '<span class="status s-approved">Approved</span>';
   if (r.status === 'declined') return '<span class="status s-declined">Declined</span>';
   if (r.status === 'hold') return '<span class="status s-hold">On Hold</span>';
+  if (r.status === 'withdrawn') return '<span class="status s-hold">Withdrawn</span>';
   return '<span class="status s-pending">Approval Pending</span>';
 }
 function myActionChip(r) {
@@ -637,9 +617,7 @@ function subLines(r) {
   const t = TYPES[r.type];
   const lines = [t.approval];
   if (r.type === 'po') lines.push('Delivery office : ' + OFFICES[r.office], r.title);
-  if (r.type === 'mc') lines.push('PO : ' + r.poNo, `${r.schedules.length} schedule(s) · ${num(r.schedules.reduce((a, s) => a + s.qty, 0))} ${r.line.unit}`);
-  if (r.type === 'ir') lines.push('Inspection on : ' + fDate(r.inspDate), r.lines.map(l => l.mc).join(', '));
-  if (r.type === 'dr') lines.push(`${num(r.qty)} ${r.unit} · Vehicle ${r.vehicle}`, r.mc);
+  if (r.type === 'ir') lines.push(`PO : ${r.poNo} · Inspection on : ${fDate(r.inspDate)}`, r.lines.map(l => l.mc).join(', '));
   if (r.type === 'bg') lines.push(r.kind, 'Against PO : ' + r.poNo);
   return lines;
 }
@@ -707,7 +685,7 @@ function profilePop() {
   </div>`;
 }
 function bellPop() {
-  const list = REQS.filter(r => r.status === 'pending' && isMine(r)).sort((a, b) => b.received - a.received).slice(0, 5);
+  const list = allReqs().filter(r => r.status === 'pending' && isMine(r)).sort((a, b) => b.received - a.received).slice(0, 5);
   return `<div class="pop" style="right:150px;width:320px">
     <div class="ph">Awaiting your approval</div>
     ${list.length ? list.map(r => `<button class="opt" data-open="${r.id}">${icon('clock', 16)}<span><b>${esc(r.ref)}</b><br><small style="color:var(--muted)">${esc(TYPES[r.type].label)} · ${esc(P(r.asker).name)}</small></span></button>`).join('') : '<div style="padding:10px;color:var(--muted);font-size:13px">You are all caught up.</div>'}
@@ -718,7 +696,7 @@ function bellPop() {
    Pages
    ===================================================================== */
 function renderHome() {
-  const pend = REQS.filter(r => r.status === 'pending' && isMine(r)).sort((a, b) => b.received - a.received);
+  const pend = allReqs().filter(r => r.status === 'pending' && isMine(r)).sort((a, b) => b.received - a.received);
   const q = (ic, l) => `<button data-act="soon" data-what="${l}"><span class="circ">${icon(ic, 22, 1.4)}</span>${l}</button>`;
   const tr = (bg, em, l, isNew) => `<button data-act="soon" data-what="${l}"><span class="circ" style="background:${bg}">${isNew ? '<span class="new">New</span>' : ''}${em}</span>${l}</button>`;
   const mails = [
@@ -734,7 +712,7 @@ function renderHome() {
     </div>
     <div class="h2">Apps</div>
     <div class="apps">
-      ${['Manufacturing Clearance','Inspection Request','Dispatch Request'].map(a => `<button class="app-tile" data-act="soon" data-what="${a}"><span class="ic">${diceMark(30, '#fff')}</span>${a}</button>`).join('')}
+      ${['Inspection Request'].map(a => `<button class="app-tile" data-act="soon" data-what="${a}"><span class="ic">${diceMark(30, '#fff')}</span>${a}</button>`).join('')}
     </div>
     <div class="h2"><span class="grow">Mailbox Entries</span><button class="ghost-sm" data-act="soon" data-what="Mailbox">View All</button></div>
     <div class="mail-row">${mails.map(([p, s]) => `<div class="mail-card">${icon('mail', 24)}<div class="k">From</div><div class="v">${esc(P(p).email)}</div><div class="k">Subject</div><div class="v">${esc(s)}</div><div class="att">This email contains <b>1 attachments</b></div></div>`).join('')}</div>
@@ -757,10 +735,10 @@ function paCard(r) {
 }
 
 function listFor(page, tab) {
-  if (page === 'mine') return REQS.filter(r => r.asker === me);
-  if (tab === 'pending') return REQS.filter(r => r.status === 'pending' && isMine(r));
-  if (tab === 'hold') return REQS.filter(r => r.status === 'hold' && isMine(r));
-  if (tab === 'completed') return REQS.filter(actedByMe);
+  if (page === 'mine') return allReqs().filter(r => r.asker === me);
+  if (tab === 'pending') return allReqs().filter(r => r.status === 'pending' && isMine(r));
+  if (tab === 'hold') return allReqs().filter(r => r.status === 'hold' && isMine(r));
+  if (tab === 'completed') return allReqs().filter(actedByMe);
   return [];
 }
 function filtered(page) {
@@ -856,40 +834,18 @@ function leftPane(r) {
       <div class="total"><span>Total Purchase Order Value <span style="font-weight:400;color:var(--muted)">(excl. 18% GST)</span></span><span>INR ${num(tot)}</span></div>
       ${filesBlock(r.files)}`;
   }
-  if (r.type === 'mc') {
-    const tq = r.schedules.reduce((a, s) => a + s.qty, 0);
-    return `<h2>Manufacturing Clearance · PO ${esc(r.poNo)}</h2>
-      <div class="note info">${icon('info', 18)}<span>Once approved, these clearance schedules are published to the vendor on the Vendor Portal. The vendor can then raise Inspection and Dispatch Requests against each schedule.</span></div>
-      ${vendorBlock(r)}<hr class="hr">
-      <div class="d-sec">Line Item</div>
-      <div class="kv-grid">${kv('Description', esc(r.line.desc), true)}${kv('Item Code', esc(r.line.code))}${kv('PO Quantity', `${num(r.line.qty)} ${esc(r.line.unit)}`)}${kv('Unit Price', 'INR ' + num(r.line.rate))}${kv('Cleared in this request', `<b>${num(tq)} ${esc(r.line.unit)}</b> (${Math.round(tq / r.line.qty * 100)}% of PO qty)`)}</div>
-      <hr class="hr"><div class="d-sec" style="margin-bottom:16px">Clearance Schedules (${r.schedules.length})</div>
-      <table class="items"><thead><tr><th>MC ID</th><th>Quantity</th><th>Shipping Location</th><th>Earliest Delivery</th></tr></thead><tbody>
-        ${r.schedules.map(s => `<tr><td><b>${esc(s.id)}</b></td><td>${num(s.qty)} ${esc(r.line.unit)}</td><td class="l"><b>${esc(s.office)}</b><br><span style="color:var(--muted)">${esc(s.addr)}</span></td><td>${fDate(s.date)}</td></tr>`).join('')}
-      </tbody></table>
-      <div class="total"><span>Total Clearance Value</span><span>INR ${num(tq * r.line.rate)}</span></div>
-      ${filesBlock(r.files)}`;
-  }
   if (r.type === 'ir') {
     return `<h2>Inspection Request · ${esc(r.ref)}</h2>
+      ${r.status === 'withdrawn' ? `<div class="note">${icon('info', 18)}<span>Withdrawn by the vendor${r.withdrawReason ? ` — “${esc(r.withdrawReason)}”` : ''}. No action needed.</span></div>` : ''}
+      ${(w => w ? `<div class="note">${icon('info', 18)}<span>Inspection waived by ${esc(P(w.by).name)}${w.note ? ` — “${esc(w.note)}”` : ''}. After final approval the full quantity is accepted without an inspection report.</span></div>` : '')(r.history.find(h => h.waive))}
+      <div class="note info">${icon('info', 18)}<span>Raised by the vendor on the Vendor Portal. Once every approver approves, Hindalco's buyer can record the inspection result and raise the Dispatch Request.</span></div>
       ${vendorBlock(r)}<hr class="hr">
       <div class="d-sec">Inspection Details</div>
-      <div class="kv-grid">${kv('PO Number', esc(r.poNo))}${kv('Inspection Date', fDate(r.inspDate))}${kv('Inspection Location', esc(r.location), true)}${kv('Vendor Contact', esc(r.contact), true)}</div>
+      <div class="kv-grid">${kv('PO Number', esc(r.poNo))}${kv('Proposed Inspection Date', fDate(r.inspDate))}${kv('Inspection Location', esc(r.location), true)}${kv('Vendor Contact', esc(r.contact), true)}${r.remarks ? kv('Vendor Remarks', esc(r.remarks), true) : ''}</div>
       <hr class="hr"><div class="d-sec" style="margin-bottom:16px">Clearances offered for inspection (${r.lines.length})</div>
-      <table class="items"><thead><tr><th>MC ID</th><th>Item</th><th>Cleared Qty</th><th>Inspection Qty</th></tr></thead><tbody>
-        ${r.lines.map(l => `<tr><td><b>${esc(l.mc)}</b></td><td class="l">${esc(l.desc)}</td><td>${num(l.mcQty)} ${esc(l.unit)}</td><td><b>${num(l.qty)} ${esc(l.unit)}</b></td></tr>`).join('')}
+      <table class="items"><thead><tr><th>MC ID</th><th>Item</th><th>Shipping Location</th><th>Cleared Qty</th><th>Inspection Qty</th></tr></thead><tbody>
+        ${r.lines.map(l => `<tr><td><b>${esc(l.mc)}</b></td><td class="l">${l.code ? `<b>${esc(l.code)}</b><br>` : ''}${esc(l.desc)}</td><td class="l">${esc(l.loc || '—')}</td><td>${l.mcQty != null ? `${num(l.mcQty)} ${esc(l.unit)}` : '—'}</td><td><b>${num(l.qty)} ${esc(l.unit)}</b></td></tr>`).join('')}
       </tbody></table>
-      ${filesBlock(r.files)}`;
-  }
-  if (r.type === 'dr') {
-    return `<h2>Dispatch Request · ${esc(r.ref)}</h2>
-      ${r.status === 'hold' ? `<div class="note">${icon('pause', 18)}<span>On hold — ${esc([...r.history].reverse().find(h => h.t === 'hold')?.note || '')}</span></div>` : ''}
-      ${vendorBlock(r)}<hr class="hr">
-      <div class="d-sec">Dispatch Details</div>
-      <div class="kv-grid">${kv('PO Number', esc(r.poNo))}${kv('Manufacturing Clearance', esc(r.mc))}${kv('Item', esc(r.desc), true)}
-        ${kv('Dispatch Qty', `<b>${num(r.qty)} ${esc(r.unit)}</b> of ${num(r.mcQty)} ${esc(r.unit)} cleared`)}${kv('Invoice No.', esc(r.invoice))}
-        ${kv('Vehicle No.', esc(r.vehicle))}${kv('Transporter', esc(r.transporter))}${kv('LR / Docket No.', esc(r.lr))}${kv('E-Way Bill', esc(r.ewb))}
-        ${kv('Dispatch Date', fDate(r.dispatchDate))}${kv('Expected Delivery', fDate(r.eta))}${kv('Ship To', esc(r.to), true)}</div>
       ${filesBlock(r.files)}`;
   }
   // bg
@@ -911,12 +867,8 @@ function rightApproval(r) {
   let key, fields;
   if (r.type === 'po') { key = ['PO Number', r.ref];
     fields = f('Category', esc(r.category)) + f('Order Id', esc(r.ref)) + f('Title', esc(r.title)) + f('Billing Address', esc(BILLING)) + f('Delivery Address', esc(OFFICES[r.office])) + f('Currency', 'INR') + f('Amount ( Incl. Tax )', num(amt)) + f('Raised By', esc(a.name)) + f('Vendor Name', esc(v.name)); }
-  if (r.type === 'mc') { key = ['PO Number', r.poNo];
-    fields = f('Line Item', esc(r.line.desc)) + f('Schedules', r.schedules.length) + f('Clearance Qty', `${num(r.schedules.reduce((x, s) => x + s.qty, 0))} ${esc(r.line.unit)}`) + f('Clearance Value', inr(amt)) + f('Earliest Delivery', fDate(Math.min(...r.schedules.map(s => +s.date)))) + f('Raised By', esc(a.name)) + f('Vendor Name', esc(v.name)); }
   if (r.type === 'ir') { key = ['Inspection Request', r.ref];
     fields = f('PO Number', esc(r.poNo)) + f('Clearances', r.lines.map(l => esc(l.mc)).join(', ')) + f('Inspection Qty', r.lines.map(l => `${num(l.qty)} ${esc(l.unit)}`).join(', ')) + f('Inspection Date', fDate(r.inspDate)) + f('Location', esc(r.location)) + f('Raised By', `${esc(a.name)} (Vendor)`) + f('Vendor Name', esc(v.name)); }
-  if (r.type === 'dr') { key = ['Dispatch Request', r.ref];
-    fields = f('PO Number', esc(r.poNo)) + f('Manufacturing Clearance', esc(r.mc)) + f('Dispatch Qty', `${num(r.qty)} ${esc(r.unit)}`) + f('Vehicle No.', esc(r.vehicle)) + f('Expected Delivery', fDate(r.eta)) + f('Raised By', `${esc(a.name)} (Vendor)`) + f('Vendor Name', esc(v.name)); }
   if (r.type === 'bg') { key = ['BG Number', r.ref.replace('BG/', '')];
     fields = f('Guarantee Type', esc(r.kind)) + f('Bank', esc(r.bank + ', ' + r.branch)) + f('Currency', 'INR') + f('Amount', num(r.amount)) + f('Against PO', esc(r.poNo)) + f('Raised By', esc(a.name)) + f('Vendor Name', esc(v.name)); }
 
@@ -945,10 +897,11 @@ function timelineItems(r) {
     const p = P(h.by);
     const n = out.length;
     if (h.t === 'start') out.push({ st:'done', lbl:'App Started', nm:`Submitted by ${p.name}`, ln:['Type: start', `Sent on : ${fTime(h.at)}`], tat });
-    if (h.t === 'approved') out.push({ st:'done', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, 'Status: APPROVED', `Actioned on : ${fTime(h.at)}`], tat, note:h.note });
+    if (h.t === 'approved') out.push({ st:'done', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, `Status: APPROVED${h.waive ? ' · INSPECTION WAIVED' : ''}`, `Actioned on : ${fTime(h.at)}`], tat, note:h.note });
     if (h.t === 'declined') out.push({ st:'declined', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, 'Status: DECLINED', `Actioned on : ${fTime(h.at)}`], tat, note:h.note });
     if (h.t === 'hold') out.push({ st:'hold', lbl:'Put on Hold', nm:p.name, ln:[`Status: ON HOLD`, `On : ${fTime(h.at)}`], tat, note:h.note });
     if (h.t === 'unhold') out.push({ st:'done', lbl:'Hold Released', nm:p.name, ln:[`On : ${fTime(h.at)}`], tat, note:h.note });
+    if (h.t === 'withdrawn') out.push({ st:'declined', lbl:'Withdrawn', nm:`Withdrawn by ${p.name} (Vendor)`, ln:[`On : ${fTime(h.at)}`], tat, note:h.note });
     if (out[n]) out[n].at = h.at;
   });
   r.clar.forEach(c => out.push({ st:'clar', lbl:'Clarification', nm:P(c.by).name, ln:[`On : ${fTime(c.at)}`], note:c.text, at:c.at }));
@@ -973,7 +926,7 @@ function rightTimeline(r) {
 function rightClar(r) {
   const amRequester = r.asker === me;
   const target = amRequester ? P(currentApprover(r) || r.chain[r.chain.length - 1]) : P(r.asker);
-  const closed = r.status === 'approved' || r.status === 'declined';
+  const closed = r.status === 'approved' || r.status === 'declined' || r.status === 'withdrawn';
   return `<div class="clar-wrap">
     <div class="clar-list">${r.clar.length ? r.clar.map(c => `<div class="msg ${c.by === me ? 'me' : ''}"><div class="h"><b>${esc(P(c.by).name)}</b> · ${fTime(c.at)}</div>${esc(c.text)}</div>`).join('') :
       `<div style="color:var(--muted);font-size:13px;line-height:1.6">No clarifications yet.<br>${amRequester ? 'Approvers can ask you questions about this request here.' : `Ask ${esc(target.name)} for more information before you approve. The request stays in your queue while you wait.`}</div>`}
@@ -987,16 +940,18 @@ function rightClar(r) {
 }
 
 function renderDrawer() {
-  const r = REQS.find(x => x.id === ui.open);
+  const r = findReq(ui.open);
   if (!r) return '';
   const canAct = isMine(r);
   const myAct = [...r.history].reverse().find(h => ['approved','declined'].includes(h.t) && h.by === me);
   const unread = r.clar.length && r.clar[r.clar.length - 1].by !== me;
   let foot;
-  if (canAct) foot = `
+  if (r.status === 'withdrawn') foot = `<div class="done-banner note" style="margin:0">${icon('info', 18)}<span>Withdrawn by the vendor — no action needed.</span></div>`;
+  else if (canAct) foot = `
     <button class="act act-dec" data-act="decline">${icon('x', 18, 2)} Decline</button>
     <button class="act act-app" data-act="approve">${icon('check', 18, 2)} Approve</button>
-    ${r.status === 'hold' ? `<button class="act act-hold wide" data-act="unhold">${icon('play', 16, 2)} Release Hold</button>` : `<button class="act act-hold wide" data-act="hold">Hold Approval</button>`}`;
+    ${r.type === 'ir' ? `<button class="act act-waive" data-act="waive" title="Approve without a physical inspection">Waive Inspection</button>` : ''}
+    ${r.status === 'hold' ? `<button class="act act-hold ${r.type === 'ir' ? '' : 'wide'}" data-act="unhold">${icon('play', 16, 2)} Release Hold</button>` : `<button class="act act-hold ${r.type === 'ir' ? '' : 'wide'}" data-act="hold">Hold Approval</button>`}`;
   else if (myAct) foot = `<div class="done-banner note ${myAct.t === 'declined' ? 'bad' : 'ok'}" style="margin:0">${icon(myAct.t === 'declined' ? 'x' : 'check', 18, 2)}<span>You ${myAct.t} this on ${fTime(myAct.at)}${r.status === 'pending' ? ` · now pending with ${esc(P(currentApprover(r)).name)}` : ''}</span></div>`;
   else if (r.asker === me) foot = `<div class="done-banner note info" style="margin:0">${icon('info', 18)}<span>${r.status === 'approved' ? 'Fully approved.' : r.status === 'declined' ? 'Declined.' : `Waiting on ${esc(P(currentApprover(r)).name)} (${r.status === 'hold' ? 'on hold' : 'level ' + (r.level + 1) + ' of ' + r.chain.length})`}</span></div>`;
   else foot = '';
@@ -1021,7 +976,7 @@ function renderDrawer() {
 let modal = null; // { kind, ids }
 function renderModal() {
   if (!modal) return '';
-  const rs = modal.ids.map(id => REQS.find(r => r.id === id));
+  const rs = modal.ids.map(id => findReq(id)).filter(Boolean);
   const many = rs.length > 1;
   const list = many ? `<div class="mini-list">${rs.map(r => `${esc(r.ref)} · <span style="color:var(--muted)">${esc(TYPES[r.type].label)}</span>`).join('<br>')}</div>` : '';
   const M = {
@@ -1033,6 +988,9 @@ function renderModal() {
     hold: { h:'Hold Approval', p:'The request moves to your Hold tab. You can approve, decline or release it later.',
       body: `<div class="field" id="fNote"><label>Reason for hold <span class="req">*</span></label><textarea id="mNote" placeholder="e.g. Awaiting revised e-way bill from vendor"></textarea><span class="err">Please add a reason.</span></div>
         <div class="field"><label><input type="checkbox" class="chk" id="mAsk" checked style="vertical-align:-3px;margin-right:6px">Also send this as a clarification to the requester</label></div>`, btn:'Put on Hold', cls:'btn-primary' },
+    waive: { h:'Waive Inspection', p: `Approve this Inspection Request without a physical inspection. ${rs[0]?.level + 1 < rs[0]?.chain.length ? `It still goes to ${esc(P(rs[0].chain[rs[0].level + 1]).name)} for approval; after` : 'After'} the final approval the full inspection quantity is marked accepted and the request is Ready to Dispatch — no inspection report is recorded.`,
+      body: `<div class="field" id="fNote"><label>Reason for waiver <span class="req">*</span></label><textarea id="mNote" placeholder="e.g. Catalogue item, test certificate verified"></textarea><span class="err">Please add a reason.</span></div>
+        <div class="chips">${['Catalogue item — test certificate verified','Repeat supply from approved vendor','Third-party inspection report accepted'].map(c => `<button data-mchip="${c}">${c}</button>`).join('')}</div>`, btn:'Approve & Waive Inspection', cls:'btn-primary' },
     unhold: { h:'Release Hold', p:'The request goes back to your Pending queue.', body:`<div class="field"><label>Comment (optional)</label><textarea id="mNote" placeholder="e.g. Corrected documents received"></textarea></div>`, btn:'Release Hold', cls:'btn-primary' },
   }[modal.kind];
   return `<div class="overlay" data-act="m-close-bg"><div class="modal" role="dialog" aria-modal="true">
@@ -1044,12 +1002,12 @@ function renderModal() {
 
 function confirmModal() {
   const note = ($('#mNote')?.value || '').trim();
-  if ((modal.kind === 'decline' || modal.kind === 'hold') && !note) { $('#fNote').classList.add('invalid'); $('#mNote').focus(); return; }
+  if ((modal.kind === 'decline' || modal.kind === 'hold' || modal.kind === 'waive') && !note) { $('#fNote').classList.add('invalid'); $('#mNote').focus(); return; }
   const now = new Date();
-  const rs = modal.ids.map(id => REQS.find(r => r.id === id));
+  const rs = modal.ids.map(id => findReq(id)).filter(Boolean);
   rs.forEach(r => {
-    if (modal.kind === 'approve') {
-      r.history.push({ t:'approved', by:me, at:now, note });
+    if (modal.kind === 'approve' || modal.kind === 'waive') {
+      r.history.push({ t:'approved', by:me, at:now, note, ...(modal.kind === 'waive' ? { waive:true } : {}) });
       r.level++;
       r.status = r.level >= r.chain.length ? 'approved' : 'pending';
     } else if (modal.kind === 'decline') {
@@ -1058,15 +1016,18 @@ function confirmModal() {
     } else if (modal.kind === 'hold') {
       r.history.push({ t:'hold', by:me, at:now, note });
       r.status = 'hold';
-      if ($('#mAsk')?.checked) { r.clar.push({ by:me, at:now, text:note }); scheduleReply(r); }
+      if ($('#mAsk')?.checked) { r.clar.push({ by:me, at:now, text:note }); if (!r.shared) scheduleReply(r); }
     } else if (modal.kind === 'unhold') {
       r.history.push({ t:'unhold', by:me, at:now, note });
       r.status = 'pending';
     }
   });
+  const lost = rs.filter(r => r.shared && !commitIR(r));
+  if (lost.length) toast(`${lost.map(r => r.ref).join(', ')} was withdrawn by the vendor`, 'info');
   const n = rs.length, r0 = rs[0], kind = modal.kind;
   const msg = {
     approve: n > 1 ? `${n} requests approved` : r0.status === 'approved' ? `${r0.ref} approved` : `${r0.ref} approved · sent to ${P(currentApprover(r0)).name}`,
+    waive: r0.status === 'approved' ? `${r0.ref} approved · inspection waived, Ready to Dispatch` : `${r0.ref} approved with inspection waived · sent to ${P(currentApprover(r0)).name}`,
     decline: n > 1 ? `${n} requests declined` : `${r0.ref} declined`,
     hold: `${r0.ref} moved to Hold`, unhold: `${r0.ref} moved back to Pending`,
   }[modal.kind];
@@ -1080,9 +1041,7 @@ function confirmModal() {
 /* Simulated requester reply so the clarification loop can be demoed end to end */
 const REPLIES = {
   po:'Revised quotation with freight break-up is attached in Files. Landed rate is unchanged.',
-  mc:'Delivery dates are aligned with the stores team; the Mahan schedule can move a week earlier if needed.',
   ir:'Test certificates for all batches are uploaded. Third-party inspector is booked for the requested date.',
-  dr:'Corrected e-way bill is uploaded — vehicle number now matches the LR.',
   bg:'The bank has confirmed the BG through SFMS; confirmation copy is attached.',
 };
 function scheduleReply(r) {
@@ -1091,7 +1050,6 @@ function scheduleReply(r) {
   setTimeout(() => {
     ui.typing = null;
     r.clar.push({ by:r.asker, at:new Date(), text:REPLIES[r.type] });
-    if (r.type === 'dr' && r.files) r.files.push(pdf('E-Way_Bill_Corrected.pdf'));
     save(); render();
     toast(`${P(r.asker).name} replied on ${r.ref}`, 'msg');
   }, 2600);
@@ -1101,6 +1059,7 @@ function scheduleReply(r) {
    Render & events
    ===================================================================== */
 function render() {
+  SHARED = irReqs();
   document.body.classList.toggle('collapsed', ui.collapsed);
   renderSidebar();
   const m = $('#main');
@@ -1153,7 +1112,7 @@ document.addEventListener('click', e => {
   const a = t.closest('[data-act]');
   if (!a) return;
   const act = a.dataset.act;
-  const r = REQS.find(x => x.id === ui.open);
+  const r = findReq(ui.open);
   switch (act) {
     case 'soon': toast(`${a.dataset.what} isn't part of this prototype`, 'info'); break;
     case 'pop': ui.pop = ui.pop === a.dataset.pop ? null : a.dataset.pop; render(); break;
@@ -1170,7 +1129,7 @@ document.addEventListener('click', e => {
     case 'scroll': $('#paRow')?.scrollBy({ left: 300 * +a.dataset.dir }); break;
     case 'nav-open': document.body.classList.add('nav-open'); break;
     case 'close': ui.open = null; render(); break;
-    case 'approve': case 'decline': case 'hold': case 'unhold': modal = { kind:act, ids:[r.id] }; render(); $('#mNote')?.focus(); break;
+    case 'approve': case 'decline': case 'hold': case 'unhold': case 'waive': modal = { kind:act, ids:[r.id] }; render(); $('#mNote')?.focus(); break;
     case 'm-close': modal = null; render(); break;
     case 'm-close-bg': if (t === a) { modal = null; render(); } break;
     case 'm-confirm': confirmModal(); break;
@@ -1179,8 +1138,9 @@ document.addEventListener('click', e => {
       const txt = $('#clarText').value.trim();
       if (!txt) { $('#clarText').focus(); return; }
       r.clar.push({ by:me, at:new Date(), text:txt });
-      if (r.asker !== me) scheduleReply(r);
-      save(); render(); toast('Clarification sent', 'send');
+      if (r.shared) { if (!commitIR(r)) { render(); toast(`${r.ref} was withdrawn by the vendor`, 'info'); break; } }
+      else if (r.asker !== me) scheduleReply(r);
+      save(); render(); toast(r.shared ? `Sent to ${P(r.asker).name} on the Vendor Portal` : 'Clarification sent', 'send');
       break;
     }
   }
@@ -1195,6 +1155,16 @@ document.addEventListener('keydown', e => {
   else if (ui.pop) { ui.pop = null; render(); }
   else if (ui.open) { ui.open = null; render(); }
   else document.body.classList.remove('nav-open');
+});
+/* a new / withdrawn IR or a vendor reply arrives from the Vendor Portal */
+addEventListener('storage', e => {
+  if (e.key !== IR_STORE) return;
+  const before = new Map(SHARED.map(r => [r.id, r]));
+  render();
+  const fresh = SHARED.filter(r => !before.has(r.id) && isMine(r));
+  const replied = SHARED.filter(r => before.has(r.id) && r.clar.length > before.get(r.id).clar.length && r.clar[r.clar.length - 1].by === r.asker && r.chain.includes(me));
+  if (fresh.length) toast(`${fresh[0].ref} from ${P(fresh[0].asker).name} is awaiting your approval`, 'bell');
+  else if (replied.length) toast(`${P(replied[0].asker).name} replied on ${replied[0].ref}`, 'msg');
 });
 $('#collapseBtn').innerHTML = icon('chevLeft', 20, 2);
 $('#collapseBtn').addEventListener('click', () => { ui.collapsed = !ui.collapsed; render(); });
