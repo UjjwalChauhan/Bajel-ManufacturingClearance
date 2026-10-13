@@ -1332,7 +1332,7 @@ const PO_STAGES = {
   CLOSED:[7,'Closed','PO fully received & invoiced','slate'], CANCELLED:[0,'Cancelled','No further action','red'],
 };
 const PENDING_PO = ['DRAFT','APPROVAL','ACK','GRN','INVOICE'];
-const PO_SECTIONS = [['overview','Overview'],['lines','Line Items'],['inspection','Inspection Request'],['dispatch','Dispatch Requests'],['grn','GRN'],['invoice','Invoice'],['inputform','Requester Input Form'],
+const PO_SECTIONS = [['overview','Overview'],['lines','Line Items'],['inspection','Inspection Request'],['dispatch','Dispatch Instructions'],['grn','GRN'],['invoice','Invoice'],['inputform','Requester Input Form'],
   ['bg','Bank Guarantee'],['advances','Advances'],['documents','Documents'],['terms','Terms']];
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1673,10 +1673,11 @@ function renderPODetail(id) {
         <section data-spy="invoice">
           <div class="po-sec-title">Invoices ${editable ? plusDark('po-invoice', 'Add invoice') : ''}</div>
           ${(() => { const invs = [...po.invoices.map(iv => ({ ...iv, against: 'PO' })),
-              ...drsOfPo(po).filter(d => d.invoice).map(d => ({ no: d.invoice.no, date: isoToDate(d.invoice.date), amount: d.invoice.amount, status: 'Submitted by Vendor', against: d.id }))];
+              ...readInvs().filter(v => v.po === po.number).map(v => ({ no: v.no, date: isoToDate(v.date), amount: v.amount, status: v.status, against: [...new Set(v.items.map(y => y.dr))] })),
+              ...drsOfPo(po).filter(d => d.invoice && !d.invList).map(d => ({ no: d.invoice.no, date: isoToDate(d.invoice.date), amount: d.invoice.amount, status: 'Submitted by Vendor', against: [d.id] }))];
             return invs.length ? `<div class="po-box"><table class="mini-table po-mini"><thead>${thRow(['Invoice No','Invoice Date','Against','Amount','Status'])}</thead>
             <tbody>${invs.map(iv => `<tr><td><b>${esc(iv.no)}</b></td><td>${fmtD(iv.date)}</td>
-              <td>${iv.against === 'PO' ? 'PO' : `<button class="mc-link" data-action="dr-view" data-dr="${iv.against}">${iv.against}</button>`}</td><td>${money(iv.amount, cur)}</td>
+              <td>${iv.against === 'PO' ? 'PO' : iv.against.map(id => `<button class="mc-link" data-action="dr-view" data-dr="${id}">${id}</button>`).join(', ')}</td><td>${money(iv.amount, cur)}</td>
               <td class="right"><span class="chip ${iv.status === 'Paid' ? 'green' : ''}">${iv.status}</span></td></tr>`).join('')}</tbody></table></div>`
             : emptyBox('No Invoice Submitted yet'); })()}
         </section>
@@ -2214,17 +2215,17 @@ function mcCheckCell(l, i) {
    inspection result (accepted + rejected = IR qty) after the approvers have approved them. */
 const IR_STORE = 'bajel.ir.v2';
 let irMem = [];
-/* IR lifecycle: Pending (in approval: QA Head → Procurement Manager on the Employee Portal) → Report Pending (approved; Record Inspection unlocked)
+/* IR lifecycle: Pending (in approval: QA Head → Procurement Manager on the Employee Portal) → Result Pending (approved; Record Inspection unlocked)
    → Ready to Dispatch (inspection recorded; Rejected when nothing was accepted). Side exits: Declined (approver) · Withdrawn (vendor) */
 const APPROVERS = { priya: { name: 'Priya Nair', role: 'QA Head' }, rahul: { name: 'Rahul Verma', role: 'Procurement Manager' } };
 const apprName = k => APPROVERS[k]?.name || k;
-const readIRs = () => { try { const v = localStorage.getItem(IR_STORE); return v ? JSON.parse(v).irs || [] : irMem; } catch (e) { return irMem; } };
+const readIRs = () => { try { const v = localStorage.getItem(IR_STORE); return v ? (JSON.parse(v).irs || []).map(x => x.status === 'Report Pending' ? { ...x, status: 'Result Pending' } : x) : irMem; } catch (e) { return irMem; } };
 const isRecorded = r => r.status === 'Ready to Dispatch' || r.status === 'Rejected';
 const isClosedIr = r => r.status === 'Withdrawn' || r.status === 'Declined';
-const isLiveIr = r => ['Pending', 'Report Pending', 'Ready to Dispatch'].includes(r.status);
+const isLiveIr = r => ['Pending', 'Result Pending', 'Ready to Dispatch'].includes(r.status);
 const writeIRs = irs => { irMem = irs; try { localStorage.setItem(IR_STORE, JSON.stringify({ irs })); } catch (e) {} };
 const irsOfMc = (po, m) => readIRs().filter(r => r.po === po.number && r.mcId === m.id);
-const IR_CHIP = { 'Pending':'amber', 'Report Pending':'blue', 'Ready to Dispatch':'green', 'Invoice Pending':'blue', 'Invoice Submitted':'green',
+const IR_CHIP = { 'Pending':'amber', 'Result Pending':'blue', 'Ready to Dispatch':'green', 'Invoice Pending':'blue', 'Invoice Submitted':'green',
   'Rejected':'red', 'Declined':'red', 'Withdrawn':'gray' };
 const irChip = st => `<span class="chip ${IR_CHIP[st] || 'amber'}">${st}</span>`;
 const isoToDate = v => { const [y, m, d] = v.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -2239,19 +2240,37 @@ function apprNote(r) {
   return '';
 }
 
-/* Dispatch Requests — one per Inspection Request (1:1), created by the buyer once every item is inspected.
+/* Dispatch Instructions — one per Inspection Request (1:1), created by the buyer once every item is inspected.
    It covers all accepted quantity; the vendor sees it on the same PO in the Vendor Portal and submits one invoice against it. */
 const DR_STORE = 'bajel.dr.v2';
 let drMem = [];
-const readDRs = () => { try { const v = localStorage.getItem(DR_STORE); return v ? JSON.parse(v).drs || [] : drMem; } catch (e) { return drMem; } };
-const writeDRs = drs => { drMem = drs; try { localStorage.setItem(DR_STORE, JSON.stringify({ drs })); } catch (e) {} };
+/* Vendor invoices (submitted on the Vendor Portal) are many-to-many with Dispatch Instructions: one invoice can bill items of
+   several DIs on a PO, and a DI's items can be billed across several invoices. Each invoice item points at { dr, idx }. */
+const INV_STORE = 'bajel.inv.v1';
+let invMem = [];
+const readInvs = () => { try { const v = localStorage.getItem(INV_STORE); return v ? JSON.parse(v).invs || [] : invMem; } catch (e) { return invMem; } };
+/* overlay the invoices on a DI: item.inv, invList, status, and a summary d.invoice once every item is billed */
+function withInvoices(d, invs) {
+  const list = invs.filter(v => v.items.some(y => y.dr === d.id));
+  if (!list.length) return d;   // nothing billed yet, or a DI invoiced as a whole before item-level invoicing (d.invoice)
+  const items = d.items.map((x, i) => ({ ...x, inv: list.find(v => v.items.some(y => y.dr === d.id && y.idx === i))?.no || null }));
+  const done = items.every(x => x.inv), last = list.reduce((a, v) => v.createdAt > a.createdAt ? v : a);
+  const share = r2(list.reduce((a, v) => a + v.items.filter(y => y.dr === d.id).reduce((b, y) => b + y.qty * y.price * (1 + (y.gst + (y.cess || 0)) / 100), 0), 0));
+  return { ...d, items, invList: list, status: done ? 'Invoice Submitted' : 'Partially Invoiced',
+    invoice: done ? { no: list.map(v => v.no).join(', '), date: last.date, amount: share, docs: list.flatMap(v => v.docs || []), remarks: '', createdAt: last.createdAt } : null };
+}
+const readDRs = () => { const invs = readInvs(); try { const v = localStorage.getItem(DR_STORE);
+  return (v ? (JSON.parse(v).drs || []).map(d => /^DR-/.test(d.id) ? { ...d, id: 'DI-' + d.id.slice(3) } : d) : drMem).map(d => withInvoices(d, invs)); } catch (e) { return drMem; } };
+const invCell = (d, po) => d.invList ? `${d.invList.map(v => `<b>${esc(v.no)}</b>`).join(', ')}<div class="faint">${d.invoice ? money(d.invoice.amount, po.currency) : `${d.items.filter(x => !x.inv).length} item(s) awaiting supplier`}</div>`
+  : d.invoice ? `<b>${esc(d.invoice.no)}</b><div class="faint">${money(d.invoice.amount, po.currency)}</div>` : '<span class="faint">Awaiting supplier</span>';
+const writeDRs = drs => { drs = drs.map(({ invList, ...d }) => invList ? { ...d, invoice: null, status: 'Invoice Pending', items: d.items.map(({ inv, ...x }) => x) } : d); drMem = drs; try { localStorage.setItem(DR_STORE, JSON.stringify({ drs })); } catch (e) {} };
 const drsOfPo = po => readDRs().filter(d => d.po === po.number);
 const drOfIr = (po, irId) => readDRs().find(d => d.po === po.number && d.irId === irId);
 const drAmount = d => r2(d.items.reduce((a, x) => a + x.qty * x.price * (1 + x.gst / 100), 0));
 /* a vendor IR can merge several MCs: it is stored as one record per MC item (key = "IR-…#n") */
 const irKey = r => r.key || r.id;
 const irLabel = r => r.items > 1 ? `${r.id} · Item ${r.item}/${r.items}` : r.id;
-const drChip = st => `<span class="chip ${st === 'Invoice Submitted' ? 'green' : 'blue'}">${st}</span>`;
+const drChip = st => `<span class="chip ${st === 'Invoice Submitted' ? 'green' : st === 'Partially Invoiced' ? 'amber' : 'blue'}">${st}</span>`;
 /* an MC created with "Inspection Required" off skips the IR flow: it is Ready to Dispatch straight away and gets its own DR */
 const irReq = m => m.irRequired !== false;
 const drOfMc = (po, mcId) => readDRs().find(d => d.po === po.number && !d.irId && d.mcId === mcId);
@@ -2259,12 +2278,12 @@ function mcDirectStage(po, m) {
   const dr = drOfMc(po, m.id);
   return !dr ? 'Ready to Dispatch' : dr.invoice ? 'Invoice Submitted' : 'Invoice Pending';
 }
-addEventListener('storage', e => { if ([IR_STORE, DR_STORE].includes(e.key) && currentPO() && document.getElementById('poTabs')) rerenderPO(); });
+addEventListener('storage', e => { if ([IR_STORE, DR_STORE, INV_STORE].includes(e.key) && currentPO() && document.getElementById('poTabs')) rerenderPO(); });
 
 /* IRs under one MC, one row per item */
 function irRows(po, l, irs, withMc = false) {
   return `<table class="mini-table ir-table"><thead><tr><th>Inspection Request</th>${withMc ? '<th>MC ID</th>' : ''}<th>Inspection Qty</th><th>Proposed Date</th><th>Raised On</th>
-    <th>Accepted</th><th>Rejected</th><th>Status</th><th>Dispatch Request</th><th class="right">Action</th></tr></thead>
+    <th>Accepted</th><th>Rejected</th><th>Status</th><th>Dispatch Instruction</th><th class="right">Action</th></tr></thead>
     <tbody>${irs.map(r => {
       const done = isRecorded(r), dr = drOfIr(po, r.id);
       const group = readIRs().filter(x => x.po === r.po && x.id === r.id), gst = irOverall(group);
@@ -2276,10 +2295,10 @@ function irRows(po, l, irs, withMc = false) {
           : isClosedIr(r) ? '<span class="faint">—</span>' : !done ? '<span class="faint">After inspection</span>' : gst === 'Ready to Dispatch' ? '<span class="faint">Not created</span>'
           : gst === 'Rejected' ? '<span class="faint">Nothing accepted</span>' : '<span class="faint">Other items pending</span>'}</td>
         <td class="right"><span class="ir-actions">${r.status === 'Pending' ? '<span class="faint">In approval</span>'
-          : r.status === 'Report Pending' ? `<button class="btn btn-primary btn-xs" data-action="ir-record" data-ir="${irKey(r)}">${icon('check', 9, 2.4)} Record Inspection</button>`
+          : r.status === 'Result Pending' ? `<button class="btn btn-primary btn-xs" data-action="ir-record" data-ir="${irKey(r)}">${icon('check', 9, 2.4)} Record Inspection</button>`
           : isClosedIr(r) ? `<button class="btn btn-ghost btn-xs" data-action="irg-open" data-irg="${esc(r.id)}">${icon('eye', 9, 2)} View</button>`
           : `<button class="btn btn-ghost btn-xs" data-action="ir-view" data-ir="${irKey(r)}">${icon('eye', 9, 2)} View</button>${!dr && gst === 'Ready to Dispatch'
-            ? `<button class="btn btn-primary btn-xs" data-action="dr-create" data-irg="${esc(r.id)}">${icon('plus', 9, 2.6)} Create Dispatch Request</button>` : ''}`}</span></td></tr>`;
+            ? `<button class="btn btn-primary btn-xs" data-action="dr-create" data-irg="${esc(r.id)}">${icon('plus', 9, 2.6)} Create Dispatch Instruction</button>` : ''}`}</span></td></tr>`;
     }).join('')}</tbody></table>`;
 }
 /* tracking panel under each line item: Manufacturing Clearance · Inspection Requests · Dispatch Instructions */
@@ -2299,23 +2318,23 @@ function mcRow(po, l, i) {
         const mirs = irsOfMc(po, m), acc = r2(mirs.reduce((a, r) => a + (r.accepted || 0), 0)), w = m.status === 'Withdrawn';
         const direct = !irReq(m), dr = direct ? drOfMc(po, m.id) : null;
         const busy = mirs.some(isLiveIr) || !!dr;
-        return `<tr class="${w ? 'mc-wd' : ''}"><td><button class="mc-link" data-action="mc-view" data-i="${i}" data-k="${k}" title="View clearance, inspection and dispatch requests">${m.id}</button></td><td>${fmtNum(m.qty)} ${l.unit}</td><td>${esc(officeName(m.office))}</td>
+        return `<tr class="${w ? 'mc-wd' : ''}"><td><button class="mc-link" data-action="mc-view" data-i="${i}" data-k="${k}" title="View clearance, inspection requests and dispatch instructions">${m.id}</button></td><td>${fmtNum(m.qty)} ${l.unit}</td><td>${esc(officeName(m.office))}</td>
         <td>${fmtD(m.date)}</td><td>${fmtDT(m.createdAt)} · ${esc(m.by)}</td>
         <td>${direct ? '<span class="chip gray">Not required</span>' : mirs.length ? `<button class="mc-link" data-action="line-tab" data-i="${i}" data-tab="ir">${mirs.length} IR</button> · ${fmtNum(acc)} accepted` : '<span class="faint">No request yet</span>'}</td>
         <td>${w ? `<span class="chip gray">Withdrawn</span><div class="stage-sub">${m.withdrawnAt ? fmtD(m.withdrawnAt) : ''}${m.withdrawReason ? ` · “${esc(m.withdrawReason)}”` : ''}</div>`
           : direct ? `${irChip(mcDirectStage(po, m))}${dr ? `<div class="stage-sub"><button class="mc-link" data-action="dr-view" data-dr="${dr.id}">${dr.id}</button></div>` : ''}`
           : `<span class="chip">${m.status}</span>`}</td>
         <td class="right">${w ? '<span class="faint">—</span>' : direct && !dr
-          ? `<span class="ir-actions"><button class="btn btn-primary btn-xs" data-action="dr-create-mc" data-i="${i}" data-k="${k}">${icon('plus', 9, 2.6)} Create Dispatch Request</button>
+          ? `<span class="ir-actions"><button class="btn btn-primary btn-xs" data-action="dr-create-mc" data-i="${i}" data-k="${k}">${icon('plus', 9, 2.6)} Create Dispatch Instruction</button>
              <button class="btn btn-danger-soft btn-xs" data-action="mc-wd" data-i="${i}" data-k="${k}" title="Withdraw clearance and return its quantity to the line item">${icon('back', 9, 2)} Withdraw</button></span>`
           : busy
-          ? `<button class="btn btn-danger-soft btn-xs" disabled title="${dr ? 'A Dispatch Request exists for this clearance' : 'An Inspection Request is in progress on this clearance'}">${icon('lock', 9, 2)} Withdraw</button>`
+          ? `<button class="btn btn-danger-soft btn-xs" disabled title="${dr ? 'A Dispatch Instruction exists for this clearance' : 'An Inspection Request is in progress on this clearance'}">${icon('lock', 9, 2)} Withdraw</button>`
           : `<button class="btn btn-danger-soft btn-xs" data-action="mc-wd" data-i="${i}" data-k="${k}" title="Withdraw clearance and return its quantity to the line item">${icon('back', 9, 2)} Withdraw</button>`}</td></tr>`;
       }).join('')}</tbody></table>`
     : `<div class="lp-empty">No Manufacturing Clearance created for this line item yet.</div>`;
   else if (tab === 'ir') body = irs.length ? irRows(po, l, irs, true)
     : `<div class="lp-empty">${l.mcs.length ? 'The vendor has not raised an Inspection Request on this line item yet.' : 'Inspection Requests are raised by the vendor once a Manufacturing Clearance is released.'}</div>`;
-  else body = drs.length ? `<table class="mini-table ir-table"><thead><tr><th>Dispatch Request</th><th>Inspection Request</th><th>MC ID</th><th>Dispatch Qty (this line)</th>
+  else body = drs.length ? `<table class="mini-table ir-table"><thead><tr><th>Dispatch Instruction</th><th>Inspection Request</th><th>MC ID</th><th>Dispatch Qty (this line)</th>
       <th>Ship To</th><th>Dispatch By</th><th>Mode</th><th>Status</th><th>Invoice</th><th class="right">Action</th></tr></thead>
       <tbody>${drs.map(d => { const mine = d.items.filter(x => ids.has(x.mcId)); return `<tr>
         <td><button class="mc-link" data-action="dr-view" data-dr="${d.id}">${d.id}</button><div class="faint">${fmtDT(new Date(d.createdAt))}</div></td>
@@ -2323,7 +2342,7 @@ function mcRow(po, l, i) {
         <td class="nw">${mine.map(x => esc(x.mcId)).join('<br>')}</td><td><b>${unitTotals(mine, x => x.qty)}</b></td>
         <td>${[...new Set(mine.map(x => x.shipTo))].map(esc).join('<br>')}</td>
         <td>${fmtD(isoToDate(d.dispatchBy))}</td><td>${d.mode}</td><td>${drChip(d.status)}</td>
-        <td>${d.invoice ? `<b>${esc(d.invoice.no)}</b><div class="faint">${money(d.invoice.amount, po.currency)}</div>` : '<span class="faint">Awaiting supplier</span>'}</td>
+        <td>${invCell(d, po)}</td>
         <td class="right"><button class="btn btn-ghost btn-xs" data-action="dr-view" data-dr="${d.id}">${icon('eye', 9, 2)} View</button></td></tr>`; }).join('')}</tbody></table>`
     : `<div class="lp-empty">No Dispatch Instruction for this line item yet. One is created from an inspected Inspection Request, or from a clearance that needs no inspection.</div>`;
   return `<tr class="lp-row"><td colspan="11">
@@ -2342,7 +2361,7 @@ function mcRow(po, l, i) {
 }
 
 /* =====================================================================
-   Inspection Request section (between Line Items and Dispatch Requests) + IR detail pop-up.
+   Inspection Request section (between Line Items and Dispatch Instructions) + IR detail pop-up.
    A merged vendor IR is stored as one record per MC item sharing the same id.
    ===================================================================== */
 function irGroupsOf(po) {
@@ -2355,12 +2374,12 @@ function irOverall(items) {
   const s = items[0].status;
   if (s === 'Withdrawn' || s === 'Declined') return s;
   if (items.some(r => r.status === 'Pending')) return 'Pending';
-  if (items.some(r => r.status === 'Report Pending')) return 'Report Pending';
+  if (items.some(r => r.status === 'Result Pending')) return 'Result Pending';
   return items.some(r => r.status === 'Ready to Dispatch') ? 'Ready to Dispatch' : 'Rejected';
 }
 /* filter stage: once Ready to Dispatch, how far dispatch has got (what the buyer / supplier has to do next) */
 const IR_STAGES = [
-  ['Pending', 'In approval on the Employee Portal'], ['Report Pending', 'Approved · record the inspection'], ['Ready to Dispatch', 'Inspected · create Dispatch Request'],
+  ['Pending', 'In approval on the Employee Portal'], ['Result Pending', 'Approved · record the inspection'], ['Ready to Dispatch', 'Inspected · create Dispatch Instruction'],
   ['Invoice Pending', 'Supplier to submit invoice'], ['Invoice Submitted', 'Invoice received'], ['Rejected', 'Nothing accepted'],
   ['Declined', 'Declined by an approver'], ['Withdrawn', 'Withdrawn by the vendor'] ];
 function irStage(po, items) {
@@ -2388,7 +2407,7 @@ function irSectionHtml(po) {
   groups.forEach(g => g.stage = irStage(po, g.items));
   const f = ui.irFilter || 'All', count = st => groups.filter(g => g.stage === st).length;
   const shown = f === 'All' ? groups : groups.filter(g => g.stage === f);
-  const inAppr = count('Pending'), toDo = count('Report Pending') + count('Ready to Dispatch');
+  const inAppr = count('Pending'), toDo = count('Result Pending') + count('Ready to Dispatch');
   return `<section data-spy="inspection">
     <div class="po-sec-title">Inspection Requests
       ${groups.length ? `<span class="chip gray">${groups.length}</span>` : ''}
@@ -2401,7 +2420,7 @@ function irSectionHtml(po) {
     ${groups.length && !shown.length ? emptyBox(`No Inspection Requests with status ${f}`) : ''}
     ${shown.length ? `<div class="po-box"><div class="table-wrap"><table class="mini-table po-mini irg-table">
       <thead><tr><th>Inspection Request</th><th>Items</th><th>Manufacturing Clearances</th><th>Line Items</th><th>Inspection Qty</th>
-        <th>Accepted</th><th>Rejected</th><th>Proposed Date</th><th>Status</th><th>Dispatch Request</th><th class="right">Action</th></tr></thead>
+        <th>Accepted</th><th>Rejected</th><th>Proposed Date</th><th>Status</th><th>Dispatch Instruction</th><th class="right">Action</th></tr></thead>
       <tbody>${shown.map(({ id, items, stage }) => {
         const r0 = items[0], any = items.some(isRecorded), st = irOverall(items), dr = drOfIr(po, id);
         return `<tr>
@@ -2416,22 +2435,22 @@ function irSectionHtml(po) {
           <td>${irChip(st)}${stage !== st ? `<div class="stage-sub">${irChip(stage)}</div>` : ''}${apprNote(r0)}</td>
           <td>${dr ? `<button class="mc-link" data-action="dr-view" data-dr="${dr.id}">${dr.id}</button>` : dash}</td>
           <td class="right">${st === 'Pending' ? '<span class="faint">In approval</span>'
-            : stage === 'Ready to Dispatch' ? `<button class="btn btn-primary btn-xs" data-action="dr-create" data-irg="${esc(id)}">${icon('plus', 9, 2.6)} Create Dispatch Request</button>`
-            : `<button class="btn ${st === 'Report Pending' ? 'btn-primary' : 'btn-outline'} btn-xs" data-action="irg-open" data-irg="${esc(id)}">
-            ${st === 'Report Pending' ? `${icon('check', 9, 2.4)} Record Inspection` : `${icon('eye', 9, 2)} View`}</button>`}</td></tr>`;
+            : stage === 'Ready to Dispatch' ? `<button class="btn btn-primary btn-xs" data-action="dr-create" data-irg="${esc(id)}">${icon('plus', 9, 2.6)} Create Dispatch Instruction</button>`
+            : `<button class="btn ${st === 'Result Pending' ? 'btn-primary' : 'btn-outline'} btn-xs" data-action="irg-open" data-irg="${esc(id)}">
+            ${st === 'Result Pending' ? `${icon('check', 9, 2.4)} Record Inspection` : `${icon('eye', 9, 2)} View`}</button>`}</td></tr>`;
       }).join('')}</tbody></table></div></div>`
     : groups.length ? '' : emptyBox('No Inspection Requests raised by the vendor yet')}
   </section>`;
 }
 
-/* Dispatch Requests section (after Inspection Requests): one row per DR with the vendor's invoice status */
+/* Dispatch Instructions section (after Inspection Requests): one row per DR with the vendor's invoice status */
 function drSectionHtml(po) {
   const drs = drsOfPo(po);
   return `<section data-spy="dispatch">
-    <div class="po-sec-title">Dispatch Requests ${drs.length ? `<span class="chip gray">${drs.length}</span>` : ''}
+    <div class="po-sec-title">Dispatch Instructions ${drs.length ? `<span class="chip gray">${drs.length}</span>` : ''}
       ${drs.filter(d => !d.invoice).length ? `<span class="chip blue">${drs.filter(d => !d.invoice).length} awaiting supplier invoice</span>` : ''}</div>
     ${drs.length ? `<div class="po-box"><div class="table-wrap"><table class="mini-table po-mini irg-table">
-      <thead><tr><th>Dispatch Request</th><th>Inspection Request</th><th>Items (MC · Line)</th><th>Dispatch Qty</th><th>Ship To</th><th>Dispatch By</th>
+      <thead><tr><th>Dispatch Instruction</th><th>Inspection Request</th><th>Items (MC · Line)</th><th>Dispatch Qty</th><th>Ship To</th><th>Dispatch By</th>
         <th>Mode</th><th>Value incl. GST</th><th>Status</th><th>Invoice</th><th class="right">Action</th></tr></thead>
       <tbody>${drs.map(d => `<tr>
         <td><button class="mc-link" data-action="dr-view" data-dr="${d.id}">${d.id}</button><div class="faint">${fmtDT(new Date(d.createdAt))}</div></td>
@@ -2441,9 +2460,9 @@ function drSectionHtml(po) {
         <td class="irg-mcs">${[...new Set(d.items.map(x => x.shipTo))].map(esc).join('<br>')}</td>
         <td>${fmtD(isoToDate(d.dispatchBy))}</td><td>${d.mode}</td><td>${money(drAmount(d), po.currency)}</td>
         <td>${drChip(d.status)}</td>
-        <td>${d.invoice ? `<b>${esc(d.invoice.no)}</b><div class="faint">${money(d.invoice.amount, po.currency)}</div>` : '<span class="faint">Awaiting supplier</span>'}</td>
+        <td>${invCell(d, po)}</td>
         <td class="right"><button class="btn btn-outline btn-xs" data-action="dr-view" data-dr="${d.id}">${icon('eye', 9, 2)} View</button></td></tr>`).join('')}</tbody>
-    </table></div></div>` : emptyBox('No Dispatch Requests yet. Create one from an inspected Inspection Request, or from a clearance that needs no inspection')}
+    </table></div></div>` : emptyBox('No Dispatch Instructions yet. Create one from an inspected Inspection Request, or from a clearance that needs no inspection')}
   </section>`;
 }
 
@@ -2495,13 +2514,13 @@ function openIrGroup(po, id) {
         <div><div class="k">Items / MCs / Line Items</div><div class="v">${items.length} / ${new Set(items.map(r => r.mcId)).size} / ${byLine.size}</div></div>
         <div><div class="k">Approval</div><div class="v">${apprCell}</div></div>
         <div><div class="k">Inspected Items</div><div class="v">${done.length} of ${items.length}</div></div>
-        <div><div class="k">Dispatch Request</div><div class="v">${dr ? `<button class="mc-link" data-action="dr-view" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}` : dash}</div></div>
+        <div><div class="k">Dispatch Instruction</div><div class="v">${dr ? `<button class="mc-link" data-action="dr-view" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}` : dash}</div></div>
       </div>
       <div class="ir-strip irg-strip">
         <div><div class="k">Inspection Qty</div><div class="v">${unitTotals(items, r => r.qty)}</div></div>
         <div><div class="k">Accepted</div><div class="v" style="color:var(--success)">${done.length ? unitTotals(done, r => r.accepted) : '—'}</div></div>
         <div><div class="k">Rejected</div><div class="v" style="color:${done.some(r => r.rejected) ? 'var(--danger)' : 'inherit'}">${done.length ? unitTotals(done, r => r.rejected) : '—'}</div></div>
-        <div class="hi"><div class="k">In Dispatch Request</div><div class="v">${dr ? unitTotals(dr.items, x => x.qty) : '—'}</div></div>
+        <div class="hi"><div class="k">In Dispatch Instruction</div><div class="v">${dr ? unitTotals(dr.items, x => x.qty) : '—'}</div></div>
       </div>
 
       <div class="irg-sec">Inspection Details</div>
@@ -2536,9 +2555,9 @@ function openIrGroup(po, id) {
               <td>${insp ? `<b style="color:${r.rejected ? 'var(--danger)' : 'inherit'}">${fmtNum(r.rejected)}</b>` : dash}</td>
               <td>${irChip(r.status)}</td>
               <td class="wrap">${insp ? `${r.inspectedAt ? fmtD(isoToDate(r.inspectedAt)) : ''}${r.inspector ? `<div class="faint">${esc(r.inspector)}</div>` : ''}${r.inspRemarks ? `<div class="faint">“${esc(r.inspRemarks)}”</div>` : ''}`
-                : `<span class="faint">${r.status === 'Pending' ? 'Awaiting approval' : r.status === 'Report Pending' ? 'Awaiting inspection report' : '—'}</span>`}</td>
+                : `<span class="faint">${r.status === 'Pending' ? 'Awaiting approval' : r.status === 'Result Pending' ? 'Awaiting inspection report' : '—'}</span>`}</td>
               <td class="right">${r.status === 'Pending' ? '<span class="faint">In approval</span>'
-                : r.status === 'Report Pending' ? `<button class="btn btn-primary btn-xs" data-action="ir-record" data-ir="${irKey(r)}">${icon('check', 9, 2.4)} Record Inspection</button>`
+                : r.status === 'Result Pending' ? `<button class="btn btn-primary btn-xs" data-action="ir-record" data-ir="${irKey(r)}">${icon('check', 9, 2.4)} Record Inspection</button>`
                 : insp ? `<button class="btn btn-ghost btn-xs" data-action="ir-view" data-ir="${irKey(r)}">${icon('eye', 9, 2)} View</button>` : dash}</td></tr>`;
           }).join('')}</tbody></table></div></div>`).join('')}
 
@@ -2550,7 +2569,7 @@ function openIrGroup(po, id) {
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" data-irg-csv>${icon('download', 10, 2.2)} Download</button>
-      ${stage === 'Ready to Dispatch' ? `<button class="btn btn-primary" data-action="dr-create" data-irg="${esc(id)}">${icon('plus', 10, 2.6)} Create Dispatch Request</button>` : ''}
+      ${stage === 'Ready to Dispatch' ? `<button class="btn btn-primary" data-action="dr-create" data-irg="${esc(id)}">${icon('plus', 10, 2.6)} Create Dispatch Instruction</button>` : ''}
       <button class="btn btn-primary" data-irg-close>Close</button></div>
   </div>`;
   document.body.appendChild(ov);
@@ -2564,7 +2583,7 @@ function irGroupCsv(po, id) {
   const g = irGroupsOf(po).find(x => x.id === id);
   if (!g) return;
   const dr = drOfIr(po, id);
-  downloadCsv(`${id}.csv`, ['IR','Item','PO','Line Item','Item Ref','MC ID','MC Cleared Qty','Shipping Location','Earliest Delivery','Inspection Qty','UOM','Accepted','Rejected','Status','Inspected On','Inspector','Dispatch Request','Invoice'],
+  downloadCsv(`${id}.csv`, ['IR','Item','PO','Line Item','Item Ref','MC ID','MC Cleared Qty','Shipping Location','Earliest Delivery','Inspection Qty','UOM','Accepted','Rejected','Status','Inspected On','Inspector','Dispatch Instruction','Invoice'],
     g.items.map(r => { const f = findMcOf(po, r.mcId);
       return [r.id, r.item || 1, po.number, r.lineCode, r.lineRef, r.mcId, f ? f.m.qty : '', f ? officeName(f.m.office) : '', f ? fmtD(f.m.date) : '',
         r.qty, r.unit || '', r.accepted ?? '', r.rejected ?? '', r.status, r.inspectedAt || '', r.inspector || '', dr ? dr.id : '', dr?.invoice ? dr.invoice.no : '']; }));
@@ -2593,10 +2612,10 @@ function openMcView(po, i, k) {
         <div><div class="k">Cleared Qty</div><div class="v">${fmtNum(m.qty)} ${l.unit}</div></div>
         <div><div class="k">Under Inspection</div><div class="v">${fmtNum(sum(r => !isRecorded(r) && !isClosedIr(r) ? r.qty : 0))}</div></div>
         <div><div class="k">Accepted / Rejected</div><div class="v"><span style="color:var(--success)">${fmtNum(sum(r => r.accepted))}</span> / <span style="color:${sum(r => r.rejected) ? 'var(--danger)' : 'inherit'}">${fmtNum(sum(r => r.rejected))}</span></div></div>
-        <div><div class="k">In Dispatch Requests</div><div class="v">${fmtNum(dispatched)}</div></div>
+        <div><div class="k">In Dispatch Instructions</div><div class="v">${fmtNum(dispatched)}</div></div>
       </div>
       ${!irReq(m) ? `<div class="sec-mini">Dispatch</div><div style="padding:6px 0">Inspection is <b>not required</b> for this clearance. Status: ${irChip(mcDirectStage(po, m))}
-        ${drOfMc(po, m.id) ? ` · <button class="mc-link" data-action="dr-view" data-dr="${drOfMc(po, m.id).id}">${drOfMc(po, m.id).id}</button>` : w ? '' : ` · <button class="btn btn-primary btn-xs" data-action="dr-create-mc" data-i="${i}" data-k="${k}">${icon('plus', 9, 2.6)} Create Dispatch Request</button>`}</div>`
+        ${drOfMc(po, m.id) ? ` · <button class="mc-link" data-action="dr-view" data-dr="${drOfMc(po, m.id).id}">${drOfMc(po, m.id).id}</button>` : w ? '' : ` · <button class="btn btn-primary btn-xs" data-action="dr-create-mc" data-i="${i}" data-k="${k}">${icon('plus', 9, 2.6)} Create Dispatch Instruction</button>`}</div>`
       : `<div class="sec-mini">Inspection Requests</div>
       ${irs.length ? `<div class="table-wrap">${irRows(po, l, irs)}</div>` : '<div class="faint" style="padding:6px 0">The vendor has not raised an Inspection Request against this clearance yet.</div>'}`}
     </div>
@@ -2610,33 +2629,33 @@ function mcOfIr(po, r) {
   const l = po.lines.find(x => x.ref === r.lineRef);
   return { l, m: l?.mcs.find(x => x.id === r.mcId) };
 }
-/* one Dispatch Request per Inspection Request, for every accepted item; created once all items are inspected */
+/* one Dispatch Instruction per Inspection Request, for every accepted item; created once all items are inspected */
 function openDrCreate(po, irId) {
   closeMenu();
   const items = readIRs().filter(r => r.po === po.number && r.id === irId).sort((a, b) => (a.item || 1) - (b.item || 1));
   if (!items.length) return toast('Inspection request not found');
-  if (drOfIr(po, irId)) return toast(`A Dispatch Request already exists for ${irId}`);
+  if (drOfIr(po, irId)) return toast(`A Dispatch Instruction already exists for ${irId}`);
   const st = irOverall(items);
-  if (st === 'Pending' || st === 'Report Pending') return toast(`Record the inspection of every item of ${irId} first`);
+  if (st === 'Pending' || st === 'Result Pending') return toast(`Record the inspection of every item of ${irId} first`);
   if (st !== 'Ready to Dispatch') return toast(`Nothing was accepted in ${irId}`);
   const acc = items.filter(r => r.accepted > 0);
-  drForm(po, { id: 'DR-' + irId.slice(3), irId, mcId: null, source: irId, skipped: items.length - acc.length,
-    intro: `One Dispatch Request covers all accepted quantity of <b style="color:var(--text)">${esc(irId)}</b>. The vendor submits one invoice against it.`,
+  drForm(po, { id: 'DI-' + irId.slice(3), irId, mcId: null, source: irId, skipped: items.length - acc.length,
+    intro: `One Dispatch Instruction covers all accepted quantity of <b style="color:var(--text)">${esc(irId)}</b>. The vendor submits one invoice against it.`,
     rows: acc.map(r => { const { l, m } = mcOfIr(po, r), o = m ? officeById(m.office) : null;
       return { key: irKey(r), item: r.item || 1, mcId: r.mcId, lineRef: r.lineRef, lineCode: r.lineCode, lineDesc: l?.desc || r.lineDesc || '', inspected: r.qty,
         qty: r.accepted, unit: l?.unit || r.unit || '', price: l?.price || 0, gst: l?.gst ?? 18, shipTo: o?.name || r.mcLocation || '', shipAddr: o?.address || '', date: m?.date }; }) });
 }
-/* an MC with "Inspection Required" off: the Dispatch Request is raised straight against it, for its full quantity */
+/* an MC with "Inspection Required" off: the Dispatch Instruction is raised straight against it, for its full quantity */
 function openDrCreateMc(po, i, k) {
   closeMenu();
   const l = po.lines[i], m = l?.mcs[k];
   if (!m) return toast('Clearance not found');
   if (irReq(m)) return toast(`${m.id} needs an Inspection Request before dispatch`);
   if (m.status === 'Withdrawn') return toast(`${m.id} is withdrawn`);
-  if (drOfMc(po, m.id)) return toast(`A Dispatch Request already exists for ${m.id}`);
+  if (drOfMc(po, m.id)) return toast(`A Dispatch Instruction already exists for ${m.id}`);
   const o = officeById(m.office);
-  drForm(po, { id: 'DR-' + m.id, irId: null, mcId: m.id, source: m.id, skipped: 0,
-    intro: `Inspection is not required for <b style="color:var(--text)">${esc(m.id)}</b>, so the Dispatch Request covers its full cleared quantity. The vendor submits one invoice against it.`,
+  drForm(po, { id: 'DI-' + m.id, irId: null, mcId: m.id, source: m.id, skipped: 0,
+    intro: `Inspection is not required for <b style="color:var(--text)">${esc(m.id)}</b>, so the Dispatch Instruction covers its full cleared quantity. The vendor submits one invoice against it.`,
     rows: [{ key: m.id, item: 1, mcId: m.id, lineRef: l.ref, lineCode: l.code, lineDesc: l.desc, inspected: null, qty: m.qty, unit: l.unit,
       price: l.price, gst: l.gst, shipTo: o?.name || '', shipAddr: o?.address || '', date: m.date }] });
 }
@@ -2647,7 +2666,7 @@ function drForm(po, c) {
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<form class="modal" style="width:min(760px,100%)" novalidate>
-    <div class="modal-head"><div><h3>Create Dispatch Request</h3><div class="small muted" style="margin-top:2px">PO ${esc(po.number)} · ${esc(PO_VENDORS[po.vendor][0])} · ${esc(c.source)}</div></div>
+    <div class="modal-head"><div><h3>Create Dispatch Instruction</h3><div class="small muted" style="margin-top:2px">PO ${esc(po.number)} · ${esc(PO_VENDORS[po.vendor][0])} · ${esc(c.source)}</div></div>
       <button type="button" class="kebab x" data-close>${icon('x', 14)}</button></div>
     <div class="modal-body">
       <p style="margin-bottom:10px">${c.intro}</p>
@@ -2665,7 +2684,7 @@ function drForm(po, c) {
       </div>
     </div>
     <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close>Cancel</button>
-      <button type="submit" class="btn btn-primary">Create Dispatch Request</button></div>
+      <button type="submit" class="btn btn-primary">Create Dispatch Instruction</button></div>
   </form>`;
   document.body.appendChild(ov);
   const f = ov.querySelector('form');
@@ -2677,14 +2696,14 @@ function drForm(po, c) {
     err.hidden = !bad; err.textContent = bad;
     if (bad) return;
     const all = readDRs();
-    if (all.some(d => d.id === c.id)) { ov.remove(); rerenderPO(); return toast(`A Dispatch Request already exists for ${c.source}`); }
+    if (all.some(d => d.id === c.id)) { ov.remove(); rerenderPO(); return toast(`A Dispatch Instruction already exists for ${c.source}`); }
     const dr = { id: c.id, po: po.number, irId: c.irId, mcId: c.mcId,
       items: c.rows.map(({ date, inspected, ...x }) => x),
       dispatchBy: f.by.value, mode: f.mode.value, freight: f.freight.value, notes: f.notes.value.trim(),
       createdAt: new Date().toISOString(), by: 'Admin', status: 'Invoice Pending', invoice: null };
     all.push(dr); writeDRs(all);
     const q = unitTotals(dr.items, x => x.qty);
-    po.timeline.push({ title: 'Dispatch Request Created', by: `${dr.id}: ${q} against ${c.source}`, at: new Date() });
+    po.timeline.push({ title: 'Dispatch Instruction Created', by: `${dr.id}: ${q} against ${c.source}`, at: new Date() });
     poLog(po, `${dr.id} created against ${c.source} for ${q}`);
     ov.remove(); rerenderPO();
     toast(`${dr.id} created · visible to the vendor`);
@@ -2707,15 +2726,19 @@ function openDrView(po, drId) {
       <div><div class="k">Created</div><div class="v">${fmtDT(new Date(d.createdAt))} · ${esc(d.by)}</div></div>
     </div>
     <div class="table-wrap"><table class="mini-table" style="margin-bottom:14px">
-      <thead><tr><th>Item</th><th>MC ID</th><th>Line Item</th><th>Dispatch Qty</th><th>Ship To</th><th class="right">Value incl. GST</th></tr></thead>
+      <thead><tr><th>Item</th><th>MC ID</th><th>Line Item</th><th>Dispatch Qty</th><th>Ship To</th><th class="right">Value incl. GST</th><th>Invoice</th></tr></thead>
       <tbody>${d.items.map(x => `<tr><td>${x.item}</td><td><b>${esc(x.mcId)}</b></td><td>${esc(x.lineCode)}</td><td><b>${fmtNum(x.qty)}</b> ${x.unit}</td>
-        <td>${esc(x.shipTo)}<div class="faint">${esc(x.shipAddr)}</div></td><td class="right">${money(r2(x.qty * x.price * (1 + x.gst / 100)), po.currency)}</td></tr>`).join('')}
-        <tr><td colspan="3" class="right"><b>Total</b></td><td><b>${unitTotals(d.items, x => x.qty)}</b></td><td></td><td class="right"><b>${money(drAmount(d), po.currency)}</b></td></tr></tbody></table></div>
-    <div class="sec-mini" style="border-top:1px solid var(--border);padding-top:12px">Invoice from Vendor</div>
-    ${v ? `<div class="ir-kv" style="margin-bottom:0">
+        <td>${esc(x.shipTo)}<div class="faint">${esc(x.shipAddr)}</div></td><td class="right">${money(r2(x.qty * x.price * (1 + x.gst / 100)), po.currency)}</td><td>${x.inv || (!d.invList && v) ? `<b>${esc(x.inv || v.no)}</b>` : '<span class="faint">—</span>'}</td></tr>`).join('')}
+        <tr><td colspan="3" class="right"><b>Total</b></td><td><b>${unitTotals(d.items, x => x.qty)}</b></td><td></td><td class="right"><b>${money(drAmount(d), po.currency)}</b></td><td></td></tr></tbody></table></div>
+    <div class="sec-mini" style="border-top:1px solid var(--border);padding-top:12px">Invoice${d.invList?.length > 1 ? 's' : ''} from Vendor</div>
+    ${d.invList ? `<table class="mini-table"><thead><tr><th>Invoice No.</th><th>Invoice Date</th><th>Items from this DI</th><th>Other DIs on the invoice</th><th class="right">Invoice Amount</th><th>Status</th></tr></thead>
+      <tbody>${d.invList.map(iv => `<tr><td><b>${esc(iv.no)}</b></td><td>${fmtD(isoToDate(iv.date))}</td><td>${iv.items.filter(y => y.dr === d.id).map(y => esc(y.mcId)).join(', ')}</td>
+        <td>${[...new Set(iv.items.filter(y => y.dr !== d.id).map(y => y.dr))].join(', ') || '—'}</td><td class="right">${money(iv.amount, po.currency)}</td><td><span class="chip amber">${esc(iv.status)}</span></td></tr>`).join('')}</tbody></table>
+      ${d.items.some(x => !x.inv) ? `<div class="faint" style="margin-top:8px">${d.items.filter(x => !x.inv).length} item(s) still awaiting an invoice.</div>` : ''}`
+    : v ? `<div class="ir-kv" style="margin-bottom:0">
       <div><div class="k">Invoice No.</div><div class="v">${esc(v.no)}</div></div>
       <div><div class="k">Invoice Date</div><div class="v">${fmtD(isoToDate(v.date))}</div></div>
-      <div><div class="k">Amount</div><div class="v">${money(v.amount, po.currency)}${Math.abs(v.amount - drAmount(d)) > 1 ? `<div class="small" style="color:var(--danger);font-weight:400">differs from DR value by ${money(r2(v.amount - drAmount(d)), po.currency)}</div>` : ''}</div></div>
+      <div><div class="k">Amount</div><div class="v">${money(v.amount, po.currency)}${Math.abs(v.amount - drAmount(d)) > 1 ? `<div class="small" style="color:var(--danger);font-weight:400">differs from DI value by ${money(r2(v.amount - drAmount(d)), po.currency)}</div>` : ''}</div></div>
       <div><div class="k">Attachments</div><div class="v">${v.docs?.length ? v.docs.map(esc).join(', ') : '—'}</div></div>
       <div><div class="k">Submitted</div><div class="v">${fmtDT(new Date(v.createdAt))}</div></div>
       <div><div class="k">Remarks</div><div class="v" style="font-weight:400">${v.remarks ? esc(v.remarks) : '—'}</div></div>
@@ -2746,7 +2769,7 @@ function openIrRecord(po, irId) {
   const r = readIRs().find(x => irKey(x) === irId);
   if (!r) return toast('Inspection request not found');
   if (r.status === 'Pending') return toast(`${r.id} is still in approval on the Employee Portal`);
-  if (r.status !== 'Report Pending') return toast(`${irLabel(r)} can't be inspected (status ${r.status})`);
+  if (r.status !== 'Result Pending') return toast(`${irLabel(r)} can't be inspected (status ${r.status})`);
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<form class="modal" style="width:560px" novalidate>
@@ -2792,7 +2815,7 @@ function openIrRecord(po, irId) {
     poLog(po, `${irLabel(x)} inspected: ${fmtNum(a)} accepted, ${fmtNum(j)} rejected`);
     ov.remove(); rerenderPO();
     const group = all.filter(y => y.po === x.po && y.id === x.id);
-    toast(irOverall(group) === 'Ready to Dispatch' ? `${x.id} fully inspected · ready for Dispatch Request` : `${irLabel(x)}: ${fmtNum(a)} accepted, ${fmtNum(j)} rejected`);
+    toast(irOverall(group) === 'Ready to Dispatch' ? `${x.id} fully inspected · ready for Dispatch Instruction` : `${irLabel(x)}: ${fmtNum(a)} accepted, ${fmtNum(j)} rejected`);
   });
   setTimeout(() => f.accepted.focus(), 30);
 }
@@ -2967,7 +2990,7 @@ const MC_ACTIONS = {
   'mc-wd': el => {
     const po = currentPO(), l = po.lines[+el.dataset.i], m = l.mcs[+el.dataset.k];
     const busy = () => irsOfMc(po, m).some(isLiveIr) || !!drOfMc(po, m.id);
-    if (busy()) return toast(`${m.id} has an Inspection Request or Dispatch Request in progress and can't be withdrawn`);
+    if (busy()) return toast(`${m.id} has an Inspection Request or Dispatch Instruction in progress and can't be withdrawn`);
     const before = mcRemaining(l), after = r2(before + m.qty);
     openModal({ title: `Withdraw ${m.id}`, submitLabel: 'Withdraw Clearance',
       body: `<p style="margin-bottom:12px">Withdraw <b style="color:var(--text)">${m.id}</b> (${fmtNum(m.qty)} ${l.unit} to ${esc(officeName(m.office))})?
@@ -2976,7 +2999,7 @@ const MC_ACTIONS = {
       fields: [{ name: 'reason', label: 'Reason for withdrawal', type: 'textarea', required: true }],
       onSubmit: v => {
         // the vendor may have raised an Inspection Request while this dialog was open
-        if (busy()) { rerenderPO(); toast(`${m.id} now has an Inspection Request or Dispatch Request and can't be withdrawn`); return; }
+        if (busy()) { rerenderPO(); toast(`${m.id} now has an Inspection Request or Dispatch Instruction and can't be withdrawn`); return; }
         Object.assign(m, { status: 'Withdrawn', withdrawnAt: new Date(), withdrawnBy: 'Admin', withdrawReason: v.reason.trim() });
         saveMcs();
         po.timeline.push({ title: 'Manufacturing Clearance Withdrawn', by: `${m.id} by Admin`, at: new Date() });

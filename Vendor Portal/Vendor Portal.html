@@ -260,6 +260,51 @@
   .merge-note{font-size:10px;color:var(--muted);margin-top:3px}
   .st-DRR{background:var(--blue-bg);color:var(--blue)}
   .st-DRA{background:var(--green-50);color:var(--green-600)}
+  .st-DRP{background:var(--amber-bg);color:var(--amber)}
+  /* Dispatch Instructions page */
+  .di-list td{vertical-align:top}
+  .di-list .di-cb{width:24px;padding-right:0}
+  .di-tog{border:none;background:none;padding:2px;margin-right:4px;color:var(--muted);vertical-align:middle;display:inline-grid;place-items:center}
+  .di-tog svg{transition:transform .15s}
+  .di-tog[aria-expanded="true"] svg{transform:rotate(90deg)}
+  .di-list tr.di-open > td{background:var(--row-alt)}
+  .di-list tr.di-items > td{padding-top:0;background:var(--row-alt)}
+  .di-list tr.di-items .mini{margin-top:0}
+  /* Submit Invoice panel */
+  .inv-ov{position:fixed;inset:0;z-index:60;background:rgba(17,24,39,.45);display:flex;justify-content:flex-end}
+  .inv-shell{display:grid;grid-template-columns:minmax(0,1fr) 460px;width:min(1320px,100%);height:100%;background:#fff;box-shadow:-10px 0 40px rgba(0,0,0,.2)}
+  .inv-prev{overflow:auto;padding:26px 30px 40px;border-right:1px solid var(--border)}
+  .inv-title{text-align:center;font-size:17px;margin:0 0 20px}
+  .inv-card{border:1px solid var(--border);border-radius:10px;padding:16px 18px;font-size:10.5px;line-height:1.6}
+  .inv-row{display:flex;justify-content:space-between;gap:20px}
+  .inv-tbl{width:100%;border-collapse:collapse;margin-top:18px;font-size:10px}
+  .inv-tbl th{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border);font-weight:600}
+  .inv-tbl td{padding:8px 6px;border-bottom:1px solid var(--border);vertical-align:top}
+  .inv-sum{margin:12px 0 0 auto;width:min(260px,100%);font-size:10.5px}
+  .inv-sum div{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)}
+  .inv-sum div.b{font-weight:700}
+  .inv-form{overflow:auto;padding:20px 22px 0;display:flex;flex-direction:column;gap:12px}
+  .inv-head{display:flex;justify-content:space-between;align-items:center}
+  .inv-head h3{margin:0;font-size:14px}
+  .inv-x{width:24px;height:24px;border-radius:50%;border:none;background:#111;color:#fff;display:grid;place-items:center;padding:0}
+  .inv-asn{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;font-weight:500;padding:4px 2px;cursor:pointer}
+  .inv-asn input{position:absolute;opacity:0;width:0;height:0}
+  .inv-asn .sw{width:34px;height:19px;border-radius:10px;background:#D3D6D9;position:relative;transition:background .15s}
+  .inv-asn .sw::after{content:'';position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .inv-asn input:checked + .sw{background:var(--green)}
+  .inv-asn input:checked + .sw::after{transform:translateX(15px)}
+  .inv-asn input:focus-visible + .sw{outline:2px solid var(--green-100)}
+  .inv-lbl{font-size:10.5px;font-weight:600;color:#44444C}
+  .inv-drop{width:52px;height:52px;border:1px dashed #B9BDC2;border-radius:8px;display:grid;place-items:center;color:var(--muted);cursor:pointer}
+  .inv-drop:hover{border-color:var(--green);color:var(--green)}
+  .field .req{color:var(--red)}
+  .inv-items td{vertical-align:middle!important}
+  .inv-items .inp{height:26px;font-size:10.5px;padding:0 6px;min-width:70px}
+  .inv-items .inv-num{width:70px}
+  .inv-add{align-self:flex-start;margin-top:6px;font-weight:600;text-decoration:none;color:var(--text)}
+  .inv-tot{margin-top:4px}
+  .inv-foot{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--border);margin:0 -22px;padding:12px 22px;display:flex;justify-content:flex-end;gap:8px}
+  @media (max-width:900px){ .inv-shell{grid-template-columns:1fr;overflow:auto} .inv-prev{order:2;overflow:visible;border-right:none;border-top:1px solid var(--border)} .inv-form{overflow:visible} .inv-row{flex-direction:column} .inv-row .right{text-align:left} }
   .banner.dr{background:var(--blue-bg);border-color:#CFDDFB}
   .inp:disabled{background:var(--row-alt);color:var(--text);font-weight:600}
   .dr-table td{vertical-align:middle}
@@ -337,7 +382,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
    ===================================================================== */
 const NAV = [
   ['Quick Links', [['home','Home','home'],['invoices','Invoices','doc'],['proforma','Proforma Invoice','doc'],['inputs','Inputs','doc']]],
-  ['Procurement', [['requests','Requests','bag'],['offers','Offers','bag'],['advance','Ask Advance','chart'],['orders','Orders','chart']]],
+  ['Procurement', [['requests','Requests','bag'],['offers','Offers','bag'],['advance','Ask Advance','chart'],['orders','Orders','chart'],['dispatch','Dispatch Instructions','truck']]],
   ['Ticketing', [['ticketing','Ticketing','chat']]],
   ['Account Links', [['settlements','Settlements','wallet'],['profile','View Profile','user']]],
   ['Reports', [['report','Report','gear']]],
@@ -595,7 +640,7 @@ const closeModal = () => document.getElementById('layer').innerHTML = '';
 /* =====================================================================
    State + routing  (#/orders, #/orders/<id>)
    ===================================================================== */
-const ui = { tab:'pending', range:'all', from:D(2026,9,14), to:D(2026,10,19), q:'', status:null, sort:['date', 1] };
+const ui = { diTab:'pending', diQ:'', diOpen:new Set(), diSel:new Set(), tab:'pending', range:'all', from:D(2026,9,14), to:D(2026,10,19), q:'', status:null, sort:['date', 1] };
 
 function route() {
   const [, page = 'orders', id] = (location.hash || '#/orders').split('/');
@@ -605,18 +650,19 @@ function route() {
   const v = document.getElementById('view');
   if (page === 'orders' && id && byId(id)) v.innerHTML = detailView(byId(id));
   else if (page === 'orders') v.innerHTML = listView();
+  else if (page === 'dispatch') v.innerHTML = dispatchListView();
   else v.innerHTML = placeholderView(page);
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
 
 function renderNav(page) {
-  const pendingCount = ORDERS.filter(o => mine(o) && o.status === 'ACK').length;
+  const pendingCount = ORDERS.filter(o => mine(o) && o.status === 'ACK').length, diCount = myDrs().filter(d => !d.invoice).length;
   const acct = document.getElementById('acct');
   acct.innerHTML = Object.entries(VENDORS).map(([k, v]) => `<option value="${k}" ${k === vendorKey ? 'selected' : ''}>${esc(v.name)}</option>`).join('');
   document.getElementById('nav').innerHTML = NAV.map(([sec, items]) => `<div class="nav-sec">${sec}</div>` +
     items.map(([key, label, ic]) => `<div class="nav-item ${key === page ? 'active' : ''}" data-nav="${key}">${icon(ic, 11)}<span>${label}</span>
-      ${key === 'orders' && pendingCount ? `<span class="badge">${pendingCount}</span>` : ''}</div>`).join('')).join('');
+      ${key === 'orders' && pendingCount ? `<span class="badge">${pendingCount}</span>` : ''}${key === 'dispatch' && diCount ? `<span class="badge">${diCount}</span>` : ''}</div>`).join('')).join('');
 }
 
 /* =====================================================================
@@ -702,8 +748,8 @@ function detailView(o) {
         <span>Hindalco has released Manufacturing Clearance for ${mcLines} of ${o.lines.length} line item${o.lines.length > 1 ? 's' : ''}.
         Dispatch only the cleared quantity to the shipping location and on or after the earliest delivery date shown under each line item.</span></div>` : ''}
 
-    ${(() => { const n = drsOf(o).filter(d => !d.invoice).length; return n ? `<div class="banner dr"><b>${icon('truck', 11)} Dispatch Request${n > 1 ? 's' : ''} received</b>
-        <span>Hindalco has released ${n} Dispatch Request${n > 1 ? 's' : ''} for inspected material. <button class="link" data-goto="dispatch">Submit the invoice</button> against each Dispatch Request.</span></div>` : ''; })()}
+    ${(() => { const n = drsOf(o).filter(d => !d.invoice).length; return n ? `<div class="banner dr"><b>${icon('truck', 11)} Dispatch Instruction${n > 1 ? 's' : ''} received</b>
+        <span>Hindalco has released ${n} Dispatch Instruction${n > 1 ? 's' : ''} for inspected material. <button class="link" data-goto="dispatch">Submit the invoice</button> against each Dispatch Instruction.</span></div>` : ''; })()}
     <div class="po-title">PURCHASE ORDER / ${o.no} / ${invoicesOf(o).length} INVOICE SUBMITTED <span class="chip st-${o.status}">${STATUS[o.status]}</span></div>
     <div class="card">
       <button class="btn" data-dl-po="${o.id}">${icon('download', 11, 2.2)} Download PO</button>
@@ -765,7 +811,7 @@ function detailView(o) {
     <table class="simple">
       <thead><tr><th>Invoice No.</th><th>Invoice Date</th><th>Against</th><th>Amount</th><th>Status</th></tr></thead>
       <tbody>${invoicesOf(o).length ? invoicesOf(o).map(v => `<tr><td><b>${esc(v.no)}</b></td><td>${fmtD(v.date)}</td>
-        <td>${v.dr ? `<button class="mc-id" data-dr="${v.dr}">${v.dr}</button>` : 'PO'}</td><td>${v.amount != null ? 'INR ' + fmtN(v.amount) : '-'}</td><td>${v.status}</td></tr>`).join('')
+        <td>${v.drs ? v.drs.map(id => `<button class="mc-id" data-dr="${id}">${id}</button>`).join('<br>') : 'PO'}</td><td>${v.amount != null ? 'INR ' + fmtN(v.amount) : '-'}</td><td>${v.status}</td></tr>`).join('')
         : '<tr><td colspan="5" class="faint">No invoice submitted against this PO</td></tr>'}</tbody>
     </table>
     ${selBar(o)}`;
@@ -775,37 +821,57 @@ function detailView(o) {
    Inspection Requests — vendor raises them against one or more Manufacturing Clearances.
    Shared through localStorage (same origin, e.g. Live Server) with:
      · ../Employee Portal — approvers (QA Head → Procurement Manager) approve / decline / hold / ask for clarification
-     · ../Buyer portal    — Hindalco admin records the inspection result and raises the Dispatch Request
+     · ../Buyer portal    — Hindalco admin records the inspection result and raises the Dispatch Instruction
    ===================================================================== */
 const IR_STORE = 'bajel.ir.v2';
 const APPROVERS = { priya: { name: 'Priya Nair', role: 'QA Head' }, rahul: { name: 'Rahul Verma', role: 'Procurement Manager' } };
 const IR_CHAIN = ['priya', 'rahul'];
 const apprName = k => APPROVERS[k]?.name || k;
 let irMem = [];
-/* IR lifecycle: Pending (in approval on the Employee Portal) → Report Pending (approved) → Ready to Dispatch / Rejected (inspection recorded)
+/* IR lifecycle: Pending (in approval on the Employee Portal) → Result Pending (approved) → Ready to Dispatch / Rejected (inspection recorded)
    Side exits: Declined (by an approver) · Withdrawn (by the vendor, while still in approval) */
-const readIRs = () => { try { const v = localStorage.getItem(IR_STORE); return v ? JSON.parse(v).irs || [] : irMem; } catch (e) { return irMem; } };
+const readIRs = () => { try { const v = localStorage.getItem(IR_STORE); return v ? (JSON.parse(v).irs || []).map(x => x.status === 'Report Pending' ? { ...x, status: 'Result Pending' } : x) : irMem; } catch (e) { return irMem; } };
 const isRecorded = r => r.status === 'Ready to Dispatch' || r.status === 'Rejected';
 const isClosedIr = r => r.status === 'Withdrawn' || r.status === 'Declined';
 const writeIRs = irs => { irMem = irs; try { localStorage.setItem(IR_STORE, JSON.stringify({ irs })); } catch (e) {} };
-/* Dispatch Requests: one per Inspection Request, raised by Hindalco for all accepted quantity;
+/* Dispatch Instructions: one per Inspection Request, raised by Hindalco for all accepted quantity;
    the vendor submits one invoice against each */
 const DR_STORE = 'bajel.dr.v2';
 let drMem = [];
-const readDRs = () => { try { const v = localStorage.getItem(DR_STORE); return v ? JSON.parse(v).drs || [] : drMem; } catch (e) { return drMem; } };
-const writeDRs = drs => { drMem = drs; try { localStorage.setItem(DR_STORE, JSON.stringify({ drs })); } catch (e) {} };
+/* Vendor invoices are many-to-many with Dispatch Instructions: one invoice can bill items of several DIs on a PO, and a DI's
+   items can be billed across several invoices. Each invoice item points at { dr, idx } — a DI and the index of its item. */
+const INV_STORE = 'bajel.inv.v1';
+let invMem = [];
+const readInvs = () => { try { const v = localStorage.getItem(INV_STORE); return v ? JSON.parse(v).invs || [] : invMem; } catch (e) { return invMem; } };
+const writeInvs = invs => { invMem = invs; try { localStorage.setItem(INV_STORE, JSON.stringify({ invs })); } catch (e) {} };
+/* overlay the invoices on a DI: item.inv, invList, status, and a summary d.invoice once every item is billed */
+function withInvoices(d, invs) {
+  const list = invs.filter(v => v.items.some(y => y.dr === d.id));
+  if (!list.length) return d;   // nothing billed yet, or a DI invoiced as a whole before item-level invoicing (d.invoice)
+  const items = d.items.map((x, i) => ({ ...x, inv: list.find(v => v.items.some(y => y.dr === d.id && y.idx === i))?.no || null }));
+  const done = items.every(x => x.inv), last = list.reduce((a, v) => v.createdAt > a.createdAt ? v : a);
+  const share = r2(list.reduce((a, v) => a + v.items.filter(y => y.dr === d.id).reduce((b, y) => b + y.qty * y.price * (1 + (y.gst + (y.cess || 0)) / 100), 0), 0));
+  return { ...d, items, invList: list, status: done ? 'Invoice Submitted' : 'Partially Invoiced',
+    invoice: done ? { no: list.map(v => v.no).join(', '), date: last.date, amount: share, docs: list.flatMap(v => v.docs || []), remarks: '', createdAt: last.createdAt } : null };
+}
+const readDRs = () => { const invs = readInvs(); try { const v = localStorage.getItem(DR_STORE);
+  return (v ? (JSON.parse(v).drs || []).map(d => /^DR-/.test(d.id) ? { ...d, id: 'DI-' + d.id.slice(3) } : d) : drMem).map(d => withInvoices(d, invs)); } catch (e) { return drMem; } };
+/* the invoice overlay is derived on read, never stored */
+const writeDRs = drs => { drs = drs.map(({ invList, ...d }) => invList ? { ...d, invoice: null, status: 'Invoice Pending', items: d.items.map(({ inv, ...x }) => x) } : d);
+  drMem = drs; try { localStorage.setItem(DR_STORE, JSON.stringify({ drs })); } catch (e) {} };
 const drsOf = o => readDRs().filter(d => d.po === o.no);
 const drOfIr = r => readDRs().find(d => d.po === r.po && d.irId === r.id);
 const drAmount = d => r2(d.items.reduce((a, x) => a + x.qty * x.price * (1 + x.gst / 100), 0));
-const drChip = st => `<span class="chip st-${st === 'Invoice Submitted' ? 'DRA' : 'DRR'}">${st}</span>`;
+const drChip = st => `<span class="chip st-${st === 'Invoice Submitted' ? 'DRA' : st === 'Partially Invoiced' ? 'DRP' : 'DRR'}">${st}</span>`;
 /* clearances released with "Inspection Required" off skip the IR flow: Ready to Dispatch at once, Hindalco raises the DR on the MC itself */
 const irReq = m => m.irRequired !== false;
 const drOfMc = (o, mcId) => readDRs().find(d => d.po === o.no && !d.irId && d.mcId === mcId);
 const mcDirectStage = (o, m) => { const d = drOfMc(o, m.id); return !d ? 'Ready to Dispatch' : d.invoice ? 'Invoice Submitted' : 'Invoice Pending'; };
-/* invoices on the PO: seeded ones + those submitted against Dispatch Requests */
-const invoicesOf = o => [...o.invoices, ...drsOf(o).filter(d => d.invoice).map(d =>
-  ({ no: d.invoice.no, date: parseISO(d.invoice.date), amount: d.invoice.amount, status: 'Submitted', dr: d.id }))];
-const IR_ST = { 'Pending':'IRP', 'Report Pending':'IRRP', 'Ready to Dispatch':'IRA', 'Invoice Pending':'IRPA', 'Invoice Submitted':'IRA',
+/* invoices on the PO: seeded ones + those submitted against Dispatch Instructions */
+const invoicesOf = o => [...o.invoices,
+  ...readInvs().filter(v => v.po === o.no).map(v => ({ no: v.no, date: parseISO(v.date), amount: v.amount, status: v.status, drs: [...new Set(v.items.map(y => y.dr))] })),
+  ...drsOf(o).filter(d => d.invoice && !d.invList).map(d => ({ no: d.invoice.no, date: parseISO(d.invoice.date), amount: d.invoice.amount, status: 'Submitted', drs: [d.id] }))];
+const IR_ST = { 'Pending':'IRP', 'Result Pending':'IRRP', 'Ready to Dispatch':'IRA', 'Invoice Pending':'IRPA', 'Invoice Submitted':'IRA',
   'Rejected':'IRR', 'Declined':'IRD', 'Withdrawn':'IRW' };
 const irChip = st => `<span class="chip st-${IR_ST[st] || 'IRP'}">${st}</span>`;
 const irsOf = (o, m) => readIRs().filter(r => r.po === o.no && r.mcId === m.id);
@@ -832,7 +898,7 @@ function apprNote(r) {
 function irTable(irs, o = null, withMc = false) {
   const all = readIRs();
   return `<table class="mini"><thead><tr><th>Inspection Request</th>${withMc ? '<th>MC ID</th>' : ''}<th>Inspection Qty</th><th>Proposed Inspection Date</th><th>Raised On</th>
-    <th>Accepted Qty</th><th>Rejected Qty</th><th>Status</th><th>Dispatch Request</th><th>Action</th></tr></thead>
+    <th>Accepted Qty</th><th>Rejected Qty</th><th>Status</th><th>Dispatch Instruction</th><th>Action</th></tr></thead>
     <tbody>${irs.map(r => {
       const dr = drOfIr(r);
       const others = r.items > 1 ? all.filter(x => x.po === r.po && x.id === r.id && x.mcId !== r.mcId).map(x => x.mcId) : [];
@@ -892,13 +958,13 @@ function irOverall(items) {
   const s = items[0].status;
   if (s === 'Withdrawn' || s === 'Declined') return s;
   if (items.some(r => r.status === 'Pending')) return 'Pending';
-  if (items.some(r => r.status === 'Report Pending')) return 'Report Pending';
+  if (items.some(r => r.status === 'Result Pending')) return 'Result Pending';
   return items.some(r => r.status === 'Ready to Dispatch') ? 'Ready to Dispatch' : 'Rejected';
 }
 /* filter stage: once Ready to Dispatch, how far dispatch has got — tells the supplier where an invoice is due */
 const IR_STAGES = [
-  ['Pending', 'In approval at Hindalco'], ['Report Pending', 'Approved · inspection report awaited'], ['Ready to Dispatch', 'Inspected · awaiting Dispatch Request'],
-  ['Invoice Pending', 'Dispatch Request received · submit the invoice'], ['Invoice Submitted', 'Invoice submitted against the Dispatch Request'],
+  ['Pending', 'In approval at Hindalco'], ['Result Pending', 'Approved · inspection report awaited'], ['Ready to Dispatch', 'Inspected · awaiting Dispatch Instruction'],
+  ['Invoice Pending', 'Dispatch Instruction received · submit the invoice'], ['Invoice Submitted', 'Invoice submitted against the Dispatch Instruction'],
   ['Rejected', 'Nothing accepted'], ['Declined', 'Declined by a Hindalco approver'], ['Withdrawn', 'Withdrawn by you'] ];
 function irStage(items) {
   const st = irOverall(items);
@@ -932,7 +998,7 @@ function irSection(o) {
     ${shown.length ? '' : `<div class="placeholder" style="padding:22px">No Inspection Requests with status ${f}</div>`}
     ${shown.length ? `<div class="table-wrap"><table class="simple dr-table">
       <thead><tr><th style="text-align:left">Inspection Request</th><th>Items</th><th style="text-align:left">Manufacturing Clearances</th><th>Line Items</th>
-        <th>Inspection Qty</th><th>Accepted</th><th>Rejected</th><th>Proposed Date</th><th>Status</th><th>Dispatch Request</th><th>Action</th></tr></thead>
+        <th>Inspection Qty</th><th>Accepted</th><th>Rejected</th><th>Proposed Date</th><th>Status</th><th>Dispatch Instruction</th><th>Action</th></tr></thead>
       <tbody>${shown.map(({ id, items, stage }) => { const r0 = items[0], st = irOverall(items), dr = drOfIr(r0); return `<tr>
         <td style="text-align:left"><button class="mc-id" data-ir-open="${id}">${id} ${icon('chevR', 9, 2.6)}</button><div class="faint">${fmtDT(new Date(r0.createdAt))}</div></td>
         <td>${items.length}</td>
@@ -978,11 +1044,11 @@ function irViewModal(o, id) {
   done.forEach(r => later.push({ at: r.inspectedAt ? parseISO(r.inspectedAt) : created, st: r.accepted > 0 ? 'approved' : 'declined', lb: r.inspectionWaived ? 'Inspection Waived' : 'Inspection Recorded',
     nm:`Item ${r.item || 1} · ${r.mcId}`, ln:[`Status: ${r.status.toUpperCase()}`, `${fmtN(r.accepted)} accepted · ${fmtN(r.rejected)} rejected`, ...(r.inspector ? [`Inspector: ${r.inspector}`] : [])] }));
   if (dr) {
-    later.push({ at: new Date(dr.createdAt), st:'approved', lb:'Dispatch Request', nm:`${dr.id} released by Hindalco`, ln:[`${unitTotals(dr.items, x => x.qty)} · dispatch by ${fmtD(parseISO(dr.dispatchBy))}`, `Sent on: ${fmtDT(new Date(dr.createdAt))}`] });
+    later.push({ at: new Date(dr.createdAt), st:'approved', lb:'Dispatch Instruction', nm:`${dr.id} released by Hindalco`, ln:[`${unitTotals(dr.items, x => x.qty)} · dispatch by ${fmtD(parseISO(dr.dispatchBy))}`, `Sent on: ${fmtDT(new Date(dr.createdAt))}`] });
     if (dr.invoice) later.push({ at: new Date(dr.invoice.createdAt), st:'approved', lb:'Invoice', nm:`${dr.invoice.no} submitted`, ln:[`INR ${fmtN(dr.invoice.amount)}`, `Sent on: ${fmtDT(new Date(dr.invoice.createdAt))}`] });
   }
   later.sort((x, y) => x.at - y.at);
-  if (stOverall === 'Pending' || stOverall === 'Report Pending') later.push({ st:'upcoming', lb:'Inspection', nm:'Inspection Report', ln:['Status: NOT STARTED'] });
+  if (stOverall === 'Pending' || stOverall === 'Result Pending') later.push({ st:'upcoming', lb:'Inspection', nm:'Inspection Report', ln:['Status: NOT STARTED'] });
   tl.push(...later);
   const dotIc = { approved: icon('check', 10, 3), declined: icon('x', 10, 3), pending: '', upcoming: '' };
   const dash = '<span class="faint">—</span>';
@@ -999,13 +1065,13 @@ function irViewModal(o, id) {
       <div><div class="k">Items / MCs / Line Items</div><div class="v">${items.length} / ${new Set(items.map(r => r.mcId)).size} / ${byLine.size}</div></div>
       <div><div class="k">Approved</div><div class="v">${r0.approvedAt ? fmtDT(new Date(r0.approvedAt)) : stOverall === 'Pending' ? '<span class="faint">In approval</span>' : dash}</div></div>
       <div><div class="k">Inspected Items</div><div class="v">${done.length} of ${items.length}</div></div>
-      <div><div class="k">Dispatch Request</div><div class="v">${dr ? `<button class="mc-id" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}` : dash}</div></div>
+      <div><div class="k">Dispatch Instruction</div><div class="v">${dr ? `<button class="mc-id" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}` : dash}</div></div>
     </div>
     <div class="strip" style="grid-template-columns:repeat(4,1fr)">
       <div><div class="k">Inspection Qty</div><div class="v">${unitTotals(items, r => r.qty)}</div></div>
       <div><div class="k">Accepted</div><div class="v" style="color:var(--green-600)">${done.length ? unitTotals(done, r => r.accepted) : '—'}</div></div>
       <div><div class="k">Rejected</div><div class="v" style="color:${done.some(r => r.rejected) ? 'var(--red)' : 'inherit'}">${done.length ? unitTotals(done, r => r.rejected) : '—'}</div></div>
-      <div class="hi"><div class="k">In Dispatch Request</div><div class="v">${dr ? unitTotals(dr.items, x => x.qty) : '—'}</div></div>
+      <div class="hi"><div class="k">In Dispatch Instruction</div><div class="v">${dr ? unitTotals(dr.items, x => x.qty) : '—'}</div></div>
     </div>
 
     <div class="sec">Inspection Details</div>
@@ -1038,7 +1104,7 @@ function irViewModal(o, id) {
           <td>${insp ? `<b style="color:${r.rejected ? 'var(--red)' : 'inherit'}">${fmtN(r.rejected)}</b>` : dash}</td>
           <td>${irChip(r.status)}</td>
           <td style="white-space:normal;min-width:130px">${insp ? `${r.inspectedAt ? fmtD(parseISO(r.inspectedAt)) : ''}${r.inspector ? `<div class="faint">${esc(r.inspector)}</div>` : ''}${r.inspRemarks ? `<div class="faint">“${esc(r.inspRemarks)}”</div>` : ''}`
-            : `<span class="faint">${r.status === 'Pending' ? 'Awaiting approval' : r.status === 'Report Pending' ? 'Awaiting inspection report' : '—'}</span>`}</td></tr>`; }).join('')}</tbody>
+            : `<span class="faint">${r.status === 'Pending' ? 'Awaiting approval' : r.status === 'Result Pending' ? 'Awaiting inspection report' : '—'}</span>`}</td></tr>`; }).join('')}</tbody>
       </table></div></div>`).join('')}
 
     <div class="sec">Clarifications</div>
@@ -1071,7 +1137,7 @@ function sendClar(o, id) {
 function irCsv(o, id) {
   const items = irItems(o.no, id);
   const dr = drOfIr(items[0]);
-  const head = ['IR','Item','PO','Line Item','Item Ref','MC ID','MC Cleared Qty','Shipping Location','Earliest Delivery','Inspection Qty','UOM','Accepted','Rejected','Status','Inspected On','Inspector','Dispatch Request','Invoice'];
+  const head = ['IR','Item','PO','Line Item','Item Ref','MC ID','MC Cleared Qty','Shipping Location','Earliest Delivery','Inspection Qty','UOM','Accepted','Rejected','Status','Inspected On','Inspector','Dispatch Instruction','Invoice'];
   const rows = items.map(r => { const f = findMc(o, r.mcId); return [r.id, r.item || 1, o.no, r.lineCode, r.lineRef, r.mcId, f ? f.m.qty : '',
     f ? mcLoc(f.m).name : '', f ? fmtD(f.m.date) : '', r.qty, r.unit || '', r.accepted ?? '', r.rejected ?? '', r.status, r.inspectedAt || '', r.inspector || '',
     dr ? dr.id : '', dr?.invoice ? dr.invoice.no : '']; });
@@ -1122,7 +1188,7 @@ function mcRow(o, l, i) {
   const count = { mc: liveMcs(l).length, ir: irs.length, dr: drs.length };
   const attn = { mc: avail.length > 0, ir: irs.some(r => reinspectable(o, r)), dr: drs.some(d => !d.invoice) };
   let body;
-  if (tab === 'mc') body = l.mcs.length ? `<div class="mc-hint">Clearances marked “Not required” need no inspection — Hindalco sends the Dispatch Request directly. Tick one or more other clearances — across any line items of this PO — to merge them into one Inspection Request. Click an MC ID for its details.</div>
+  if (tab === 'mc') body = l.mcs.length ? `<div class="mc-hint">Clearances marked “Not required” need no inspection — Hindalco sends the Dispatch Instruction directly. Tick one or more other clearances — across any line items of this PO — to merge them into one Inspection Request. Click an MC ID for its details.</div>
       <table class="mini"><thead><tr><th style="width:26px"><input type="checkbox" class="mc-cb" data-irsel-line="${i}" ${allOn ? 'checked' : ''} ${avail.length ? '' : 'disabled'} aria-label="Select all clearances of ${l.code}"></th>
         <th>MC ID</th><th>Cleared Qty</th><th>Shipping Location</th><th>Shipping Address</th><th>Earliest Delivery Date</th><th>Released On</th><th>Inspection</th><th>Status</th></tr></thead>
       <tbody>${l.mcs.map((m, k) => {
@@ -1142,7 +1208,7 @@ function mcRow(o, l, i) {
     : `<div class="lp-empty">Hindalco has not released a Manufacturing Clearance for this line item yet. Don't dispatch until one is released.</div>`;
   else if (tab === 'ir') body = irs.length ? irTable(irs, o, true)
     : `<div class="lp-empty">${l.mcs.length ? 'No Inspection Request raised on this line item yet. Tick a clearance in the Manufacturing Clearance tab to raise one.' : 'An Inspection Request can be raised once Hindalco releases a Manufacturing Clearance.'}</div>`;
-  else body = drs.length ? `<table class="mini"><thead><tr><th>Dispatch Request</th><th>Inspection Request</th><th>MC ID</th><th>Dispatch Qty (this line)</th>
+  else body = drs.length ? `<table class="mini"><thead><tr><th>Dispatch Instruction</th><th>Inspection Request</th><th>MC ID</th><th>Dispatch Qty (this line)</th>
       <th>Ship To</th><th>Dispatch By</th><th>Status</th><th>Invoice</th></tr></thead>
       <tbody>${drs.map(d => { const mine = d.items.filter(x => ids.has(x.mcId)); return `<tr>
         <td><button class="mc-id" data-dr="${d.id}">${d.id} ${icon('chevR', 9, 2.6)}</button><div class="faint">${fmtDT(new Date(d.createdAt))}</div></td>
@@ -1192,7 +1258,7 @@ function mcModal(o, i, k) {
       <div class="hi"><div class="k">Available for Inspection</div><div class="v">${fmtN(s.available)}</div></div>
     </div>
     ${!irReq(m) ? `<div class="sub-h">Dispatch</div><div style="padding:4px 0 2px;font-size:11px">Inspection is <b>not required</b> for this clearance. Status: ${irChip(mcDirectStage(o, m))}
-      ${drOfMc(o, m.id) ? ` · <button class="mc-id" data-dr="${drOfMc(o, m.id).id}">${drOfMc(o, m.id).id}</button>` : ' · awaiting Dispatch Request from Hindalco'}</div>`
+      ${drOfMc(o, m.id) ? ` · <button class="mc-id" data-dr="${drOfMc(o, m.id).id}">${drOfMc(o, m.id).id}</button>` : ' · awaiting Dispatch Instruction from Hindalco'}</div>`
     : `<div class="sub-h">Inspection Requests</div>
     ${irs.length ? irTable(irs, o) : '<div class="faint" style="padding:6px 0 2px">No Inspection Request raised against this clearance yet.</div>'}`}`,
     `<button class="btn btn-ghost" data-close-btn>Close</button>
@@ -1203,7 +1269,7 @@ function mcModal(o, i, k) {
 let irDraft = null;
 function irMergeModal(o, ids) {
   const noInsp = [...new Set(ids)].filter(id => { const f = findMc(o, id); return f && !irReq(f.m); });
-  if (noInsp.length) toast(`Inspection is not required for ${noInsp.join(', ')} — Hindalco will send the Dispatch Request directly`);
+  if (noInsp.length) toast(`Inspection is not required for ${noInsp.join(', ')} — Hindalco will send the Dispatch Instruction directly`);
   ids = [...new Set(ids)].filter(id => { const f = findMc(o, id); return f && irReq(f.m) && mcAvail(o, f.m) > 0; });
   if (!ids.length && noInsp.length) return;
   if (!ids.length) return toast('Select at least one clearance with quantity available for inspection');
@@ -1305,14 +1371,14 @@ function submitMergedIR(o) {
   toast(`${id} submitted with ${n} item${n > 1 ? 's' : ''} · pending approval with ${apprName(IR_CHAIN[0])}`);
 }
 
-/* ---------- Dispatch Requests (one per Inspection Request) + invoice submission ---------- */
+/* ---------- Dispatch Instructions (one per Inspection Request) + invoice submission ---------- */
 const shipTos = d => [...new Set(d.items.map(x => x.shipTo))];
 function dispatchSection(o) {
   const drs = drsOf(o);
   if (!drs.length) return '';
-  return `<div class="sec-lbl" id="dispatch">DISPATCH REQUESTS</div>
+  return `<div class="sec-lbl" id="dispatch">DISPATCH INSTRUCTIONS</div>
     <div class="table-wrap"><table class="simple dr-table">
-      <thead><tr><th style="text-align:left">Dispatch Request</th><th>Inspection Request</th><th style="text-align:left">Items (MC · Line)</th><th>Dispatch Qty</th><th style="text-align:left">Ship To</th>
+      <thead><tr><th style="text-align:left">Dispatch Instruction</th><th>Inspection Request</th><th style="text-align:left">Items (MC · Line)</th><th>Dispatch Qty</th><th style="text-align:left">Ship To</th>
         <th>Dispatch By</th><th>Mode</th><th>Status</th><th>Action</th></tr></thead>
       <tbody>${drs.map(d => `<tr>
         <td style="text-align:left"><button class="mc-id" data-dr="${d.id}">${d.id} ${icon('chevR', 9, 2.6)}</button><div class="faint">${fmtDT(new Date(d.createdAt))}</div></td>
@@ -1325,11 +1391,87 @@ function dispatchSection(o) {
           : `<button class="btn btn-primary" data-inv-new="${d.id}">${icon('plus', 10, 2.6)} Submit Invoice</button>`}</td></tr>`).join('')}</tbody>
     </table></div>`;
 }
+/* ---------- Dispatch Instructions page: every DI across the vendor's POs. Expand a DI to see its items, tick items
+   (across DIs of one PO) and submit one invoice against them. A direct DI on an MC simply has one item. ---------- */
+const myDrs = () => { const pos = new Map(ORDERS.filter(mine).map(o => [o.no, o])); return readDRs().filter(d => pos.has(d.po)).map(d => ({ ...d, order: pos.get(d.po) })); };
+const selKey = (d, i) => `${d.id}#${i}`;
+const itemInv = (d, i) => d.items[i].inv || (d.invList ? null : d.invoice?.no) || null;
+const openIdx = d => d.items.map((x, i) => i).filter(i => !itemInv(d, i));
+const itemVal = x => r2(x.qty * x.price * (1 + x.gst / 100));
+const hsnOf = (o, x) => o?.lines.find(l => l.code === x.lineCode)?.hsn || '—';
+/* resolve selection keys to { d, i, x }; drops anything since invoiced or no longer this vendor's */
+function diSelItems() {
+  const drs = new Map(myDrs().map(d => [d.id, d]));
+  const out = [];
+  [...ui.diSel].forEach(k => { const [id, i] = k.split('#'), d = drs.get(id);
+    if (!d || !d.items[+i] || itemInv(d, +i)) ui.diSel.delete(k); else out.push({ d, i: +i, x: d.items[+i] }); });
+  return out;
+}
+function dispatchListView() {
+  const all = myDrs().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const pend = all.filter(d => !d.invoice), done = all.filter(d => d.invoice);
+  const pool = ui.diTab === 'pending' ? pend : ui.diTab === 'submitted' ? done : all;
+  const q = ui.diQ.trim().toLowerCase();
+  const rows = pool.filter(d => !q || [d.id, d.po, d.irId, d.mcId, ...(d.invList || []).map(v => v.no), d.invoice?.no, ...d.items.map(x => x.mcId)].some(v => v && String(v).toLowerCase().includes(q)));
+  const sel = diSelItems();
+  const tab = (k, l, n) => `<button class="tab ${ui.diTab === k ? 'on' : ''}" data-ditab="${k}">${l} <span class="faint">(${n})</span></button>`;
+  const row = d => {
+    const open = ui.diOpen.has(d.id), free = openIdx(d), billed = d.items.length - free.length;
+    const allOn = free.length && free.every(i => ui.diSel.has(selKey(d, i)));
+    return `<tr class="${open ? 'di-open' : ''}">
+      <td class="di-cb"><input type="checkbox" class="mc-cb" data-di-all="${d.id}" ${allOn ? 'checked' : ''} ${free.length ? '' : 'disabled'} aria-label="Select all open items of ${d.id}"></td>
+      <td><button class="di-tog" data-di-tog="${d.id}" aria-expanded="${open}" aria-label="${open ? 'Hide' : 'Show'} items of ${d.id}">${icon('chevR', 10, 2.6)}</button>
+        <button class="mc-id" data-dr="${d.id}">${d.id}</button><div class="faint" style="margin-left:20px">${fmtDT(new Date(d.createdAt))}</div></td>
+      <td><button class="po-link" data-open="${d.order.id}">${d.po}</button></td>
+      <td>${d.irId ? esc(d.irId) : `${esc(d.mcId)}<div class="faint">Inspection not required</div>`}</td>
+      <td>${d.items.length} item${d.items.length > 1 ? 's' : ''}${billed && free.length ? `<div class="faint">${billed} invoiced</div>` : ''}</td>
+      <td><b>${unitTotals(d.items, x => x.qty)}</b></td>
+      <td class="right">INR ${fmtN(drAmount(d))}</td>
+      <td>${fmtD(parseISO(d.dispatchBy))}</td>
+      <td>${drChip(d.status)}</td>
+      <td>${free.length ? `<button class="btn btn-primary btn-xs" data-inv-new="${d.id}">${icon('plus', 9, 2.6)} Submit Invoice</button>`
+        : `<button class="link" data-dr="${d.id}">View Invoice</button>`}</td></tr>
+    ${open ? `<tr class="di-items"><td></td><td colspan="9"><table class="mini merge"><thead><tr><th></th><th>MC ID</th><th>Line Item</th><th>HSN</th><th>Qty</th>
+        <th>Unit Price</th><th>GST %</th><th>Value incl. GST</th><th>Ship To</th><th>Invoice</th></tr></thead>
+      <tbody>${d.items.map((x, i) => { const inv = itemInv(d, i), on = ui.diSel.has(selKey(d, i)); return `<tr class="${on ? 'sel' : inv ? 'wd' : ''}">
+        <td><input type="checkbox" class="mc-cb" data-di-item="${selKey(d, i)}" ${on ? 'checked' : ''} ${inv ? 'disabled' : ''} aria-label="Select ${esc(x.mcId)}"></td>
+        <td><b>${esc(x.mcId)}</b></td><td style="white-space:normal;max-width:220px"><b>${esc(x.lineCode)}</b><div class="faint">${esc((x.lineDesc || '').slice(0, 60))}</div></td>
+        <td>${esc(hsnOf(d.order, x))}</td><td><b>${fmtN(x.qty)}</b> ${esc(x.unit || '')}</td><td>INR ${fmtN(x.price)}</td><td>${x.gst}%</td><td>INR ${fmtN(itemVal(x))}</td>
+        <td style="white-space:normal;max-width:180px">${esc(x.shipTo)}</td>
+        <td>${inv ? `<b>${esc(inv)}</b>` : '<span class="faint">Not invoiced</span>'}</td></tr>`; }).join('')}</tbody></table></td></tr>` : ''}`;
+  };
+  const nDi = new Set(sel.map(s => s.d.id)).size;
+  return `<div class="crumb">Procurement / Dispatch Instructions</div><h1>Dispatch Instructions</h1>
+    <div class="tabs">${tab('pending', 'Invoice Pending', pend.length)}${tab('submitted', 'Invoice Submitted', done.length)}${tab('all', 'All', all.length)}</div>
+    <div class="count">${rows.length} Dispatch Instruction${rows.length === 1 ? '' : 's'}</div>
+    <div class="mc-hint" style="margin:0 0 12px">Expand a Dispatch Instruction to see its items. Tick items from one or more Dispatch Instructions of the same PO and submit them together on one invoice.</div>
+    <div class="lbl">SEARCH DI / PO / IR / MC / INVOICE NUMBER :</div>
+    <input class="search" id="diQ" placeholder="Search Dispatch Instructions" value="${esc(ui.diQ)}">
+    <div class="table-wrap"><table class="list dr-table di-list">
+      <thead><tr><th></th><th>Dispatch Instruction</th><th>PO Number</th><th>Inspection Request / MC</th><th>Items</th><th>Dispatch Qty</th>
+        <th class="right">Value incl. GST</th><th>Dispatch By</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${rows.length ? rows.map(row).join('')
+      : `<tr><td colspan="10" class="empty">${all.length ? 'No Dispatch Instructions match.' : 'No Dispatch Instructions yet. Hindalco releases one once material is inspected, or straight away for clearances that need no inspection.'}</td></tr>`}</tbody>
+    </table></div>
+    ${sel.length ? `<div class="sel-bar" role="region" aria-label="Selected items">
+      <span><b>${sel.length}</b> item${sel.length > 1 ? 's' : ''} from <b>${nDi}</b> Dispatch Instruction${nDi > 1 ? 's' : ''} · PO ${sel[0].d.po} · INR ${fmtN(r2(sel.reduce((a, s) => a + itemVal(s.x), 0)))}</span>
+      <button class="btn btn-ghost" data-di-clear>Clear</button>
+      <button class="btn btn-primary" data-inv-sel>${icon('plus', 10, 2.6)} Submit Invoice</button></div>` : ''}`;
+}
+/* tick / untick DI items; one invoice bills one PO, so items of another PO are refused while a selection exists */
+function diSelect(keys, on) {
+  if (on) {
+    const cur = diSelItems()[0]?.d.po, d = myDrs().find(x => x.id === keys[0]?.split('#')[0]);
+    if (cur && d && d.po !== cur) { toast(`An invoice covers one PO — clear the PO ${cur} selection to pick items from PO ${d.po}`); route(); return; }
+    keys.forEach(k => ui.diSel.add(k));
+  } else keys.forEach(k => ui.diSel.delete(k));
+  route();
+}
 function drModal(drId) {
   const d = readDRs().find(x => x.id === drId);
   if (!d) return;
   const v = d.invoice;
-  modal(`Dispatch Request · ${d.id}`, `
+  modal(`Dispatch Instruction · ${d.id}`, `
     <div class="kv">
       <div><div class="k">PO Number</div><div class="v">${d.po}</div></div>
       <div><div class="k">Inspection Request</div><div class="v">${d.irId || '<span class="faint">Not required</span>'}</div></div>
@@ -1339,75 +1481,156 @@ function drModal(drId) {
       <div><div class="k">Freight</div><div class="v">${d.freight}</div></div>
     </div>
     <div class="sub-h">Items to dispatch ${d.irId ? `(accepted in ${d.irId})` : `(full quantity of ${d.mcId} · inspection not required)`}</div>
-    <table class="mini merge" style="margin-bottom:14px"><thead><tr><th>#</th><th>MC ID</th><th>Line Item</th><th>Dispatch Qty</th><th>Ship To</th><th>Value incl. GST</th></tr></thead>
+    <table class="mini merge" style="margin-bottom:14px"><thead><tr><th>#</th><th>MC ID</th><th>Line Item</th><th>Dispatch Qty</th><th>Ship To</th><th>Value incl. GST</th><th>Invoice</th></tr></thead>
       <tbody>${d.items.map((x, n) => `<tr><td>${n + 1}</td><td><b>${x.mcId}</b></td><td style="white-space:normal;max-width:220px"><b>${x.lineCode}</b><div class="faint">${esc((x.lineDesc || '').slice(0, 70))}</div></td>
         <td><b>${fmtN(x.qty)}</b> ${x.unit || ''}</td><td style="white-space:normal;max-width:220px">${esc(x.shipTo)}<div class="faint">${esc(x.shipAddr || '')}</div></td>
-        <td>INR ${fmtN(r2(x.qty * x.price * (1 + x.gst / 100)))}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="3">Total</td><td>${unitTotals(d.items, x => x.qty)}</td><td></td><td>INR ${fmtN(drAmount(d))}</td></tr></tfoot></table>
+        <td>INR ${fmtN(r2(x.qty * x.price * (1 + x.gst / 100)))}</td><td>${itemInv(d, n) ? `<b>${esc(itemInv(d, n))}</b>` : '<span class="faint">Not invoiced</span>'}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="3">Total</td><td>${unitTotals(d.items, x => x.qty)}</td><td></td><td>INR ${fmtN(drAmount(d))}</td><td></td></tr></tfoot></table>
     <div class="kv" style="grid-template-columns:1fr">
       <div><div class="k">Dispatch Instructions</div><div class="v" style="font-weight:400">${d.notes ? esc(d.notes) : '—'}</div></div>
     </div>
-    <div class="sub-h" style="border-top:1px solid var(--border);padding-top:12px">Invoice</div>
-    ${v ? `<div class="kv">
+    <div class="sub-h" style="border-top:1px solid var(--border);padding-top:12px">Invoice${d.invList?.length > 1 ? 's' : ''}</div>
+    ${d.invList ? `<table class="mini merge"><thead><tr><th>Invoice No.</th><th>Invoice Date</th><th>Items from this DI</th><th>Other DIs on the invoice</th><th>Invoice Amount</th><th>Status</th></tr></thead>
+      <tbody>${d.invList.map(iv => `<tr><td><b>${esc(iv.no)}</b></td><td>${fmtD(parseISO(iv.date))}</td>
+        <td>${iv.items.filter(y => y.dr === d.id).map(y => esc(y.mcId)).join(', ')}</td>
+        <td>${[...new Set(iv.items.filter(y => y.dr !== d.id).map(y => y.dr))].map(id => `<button class="mc-id" data-dr="${id}">${id}</button>`).join(', ') || '—'}</td>
+        <td>INR ${fmtN(iv.amount)}</td><td><span class="chip st-DRR">${esc(iv.status)}</span></td></tr>`).join('')}</tbody></table>
+      ${openIdx(d).length ? `<div class="faint" style="margin-top:8px">${openIdx(d).length} item${openIdx(d).length > 1 ? 's' : ''} still to be invoiced.</div>` : ''}`
+    : v ? `<div class="kv">
       <div><div class="k">Invoice No.</div><div class="v">${esc(v.no)}</div></div>
       <div><div class="k">Invoice Date</div><div class="v">${fmtD(parseISO(v.date))}</div></div>
       <div><div class="k">Invoice Amount</div><div class="v">INR ${fmtN(v.amount)}</div></div>
       <div><div class="k">Attachments</div><div class="v">${v.docs?.length ? v.docs.map(esc).join(', ') : '—'}</div></div>
       <div><div class="k">Submitted On</div><div class="v">${fmtDT(new Date(v.createdAt))}</div></div>
       <div><div class="k">Remarks</div><div class="v" style="font-weight:400">${v.remarks ? esc(v.remarks) : '—'}</div></div>
-    </div>` : '<div class="faint">No invoice submitted against this Dispatch Request yet.</div>'}`,
-    `<button class="btn btn-ghost" data-close-btn>Close</button>${v ? '' : `<button class="btn btn-primary" data-inv-new="${d.id}">${icon('plus', 11, 2.6)} Submit Invoice</button>`}`, true);
+    </div>` : '<div class="faint">No invoice submitted against this Dispatch Instruction yet.</div>'}`,
+    `<button class="btn btn-ghost" data-close-btn>Close</button>${!openIdx(d).length ? '' : `<button class="btn btn-primary" data-inv-new="${d.id}">${icon('plus', 11, 2.6)} Submit Invoice</button>`}`, true);
 }
-function invoiceForm(drId) {
-  const d = readDRs().find(x => x.id === drId);
-  if (!d || d.invoice) return;
-  const amt = drAmount(d), base = r2(d.items.reduce((a, x) => a + x.qty * x.price, 0));
-  modal('Submit Invoice', `
-    <div class="kv">
-      <div><div class="k">Dispatch Request</div><div class="v">${d.id}</div></div>
-      <div><div class="k">${d.irId ? 'Inspection Request' : 'Manufacturing Clearance'}</div><div class="v">${d.irId || d.mcId}</div></div>
-      <div><div class="k">Dispatch Qty</div><div class="v">${unitTotals(d.items, x => x.qty)}</div></div>
-      <div><div class="k">Base Amount</div><div class="v">INR ${fmtN(base)}</div></div>
-      <div><div class="k">GST</div><div class="v">INR ${fmtN(r2(amt - base))}</div></div>
-      <div><div class="k">Total (as per PO rates)</div><div class="v">INR ${fmtN(amt)}</div></div>
-    </div>
-    <div class="grid2">
-      <div class="field"><label for="invNo">Invoice No. *</label><input class="inp" id="invNo" placeholder="e.g. IFM/26-27/1201"><div class="err" id="invNoErr" hidden></div></div>
-      <div class="field"><label for="invDate">Invoice Date *</label><input class="inp" id="invDate" type="date" value="${isoD(TODAY)}"><div class="err" id="invDateErr" hidden></div></div>
-      <div class="field"><label for="invAmt">Invoice Amount (INR, incl. GST) *</label><input class="inp" id="invAmt" type="number" step="0.01" min="0" value="${amt}">
-        <div class="hint">Pre-filled from the PO rates for the dispatched quantity</div><div class="err" id="invAmtErr" hidden></div></div>
-      <div class="field"><label for="invDocs">Invoice Copy</label><input class="inp" id="invDocs" type="file" multiple style="padding-top:6px"></div>
-      <div class="field" style="grid-column:1/-1"><label for="invRemarks">Remarks</label><textarea class="inp" id="invRemarks" rows="2"></textarea></div>
-    </div>`,
-    `<button class="btn btn-ghost" data-dr="${d.id}" style="margin-right:auto">${icon('back', 10, 2.4)} Back</button>
-     <button class="btn btn-ghost" data-close-btn>Cancel</button>
-     <button class="btn btn-primary" data-inv-submit="${d.id}">Submit Invoice</button>`);
+/* ---------- Submit Invoice panel: invoice preview on the left, the form on the right (mirrors the Dice invoice screen).
+   Items come from one or more Dispatch Instructions of a PO; qty and price are as dispatched, cess and extra charges are the vendor's. ---------- */
+let invDraft = null;
+const CHARGE_TYPES = ['Freight', 'Packing & Forwarding', 'Insurance', 'Loading / Unloading', 'Other'];
+/* open the panel for DI items, given as selection keys, or all un-invoiced items of one DI */
+function openInvoicePanel(keys) {
+  const drs = new Map(myDrs().map(d => [d.id, d]));
+  const items = keys.map(k => { const [id, i] = k.split('#'), d = drs.get(id); return d && d.items[+i] && !itemInv(d, +i) ? { key: k, d, i: +i, x: d.items[+i] } : null; }).filter(Boolean);
+  if (!items.length) return toast('These items are already invoiced');
+  const o = items[0].d.order;
+  invDraft = { o, items: items.map(({ key, d, i, x }) => ({ key, dr: d.id, idx: i, mcId: x.mcId, lineCode: x.lineCode, desc: x.lineDesc || '', hsn: hsnOf(o, x),
+      qty: x.qty, unit: x.unit || '', price: x.price, gst: x.gst, cess: 0, shipTo: x.shipTo, shipAddr: x.shipAddr || '' })),
+    charges: [], asn: false, no: '', date: isoD(TODAY), due: '', docs: [], remarks: '', adding: false };
+  const layer = document.getElementById('layer');
+  layer.innerHTML = `<div class="inv-ov" data-inv-bg><div class="inv-shell" role="dialog" aria-label="Submit Invoice">
+    <div class="inv-prev" id="invPrev"></div>
+    <div class="inv-form">
+      <div class="inv-head"><h3>Submit Invoice</h3><button class="inv-x" data-close-btn aria-label="Close">${icon('x', 14, 2.6)}</button></div>
+      <label class="inv-asn">Create ASN <input type="checkbox" id="invAsn"><span class="sw"></span></label>
+      <div class="inv-lbl">Invoice Attachment</div>
+      <label class="inv-drop" title="Attach invoice copy"><input type="file" id="invDocs" multiple hidden>${icon('plus', 16, 2)}</label><div class="faint" id="invDocNames"></div>
+      <div class="field"><label for="invSelf">SELF ADDRESS <span class="req">**</span></label>
+        <select class="inp" id="invSelf"><option>${esc(VENDOR.name)}</option></select></div>
+      <div class="field"><label for="invNo">INVOICE NUMBER <span class="req">**</span></label><input class="inp" id="invNo" placeholder="Invoice Number*"><div class="err" id="invNoErr" hidden></div></div>
+      <div class="grid2">
+        <div class="field"><label for="invDate">INVOICE DATE <span class="req">**</span></label><input class="inp" id="invDate" type="date" value="${invDraft.date}"><div class="err" id="invDateErr" hidden></div></div>
+        <div class="field"><label for="invDue">DUE DATE</label><input class="inp" id="invDue" type="date"><div class="err" id="invDueErr" hidden></div></div>
+      </div>
+      <div id="invLines"></div>
+      <div id="invCharges"></div>
+      <div id="invTotals"></div>
+      <div class="field"><label for="invRemarks">Remarks</label><textarea class="inp" id="invRemarks" rows="2"></textarea></div>
+      <div class="inv-foot"><button class="btn btn-ghost" data-close-btn>Cancel</button><button class="btn btn-primary" data-inv-go>Submit Invoice</button></div>
+    </div></div></div>`;
+  layer.querySelector('[data-inv-bg]').addEventListener('click', e => { if (e.target.hasAttribute('data-inv-bg')) closeModal(); });
+  drawInvoice();
   setTimeout(() => document.getElementById('invNo')?.focus(), 30);
 }
-function submitInvoice(drId) {
-  const $ = id => document.getElementById(id);
+/* tax split: CGST + SGST when vendor and billing GSTIN share a state code, IGST otherwise */
+function invCalc(v) {
+  const intra = VENDOR.gstin.slice(0, 2) === OFFICES[v.o.office].gstin.slice(0, 2);
+  const lines = v.items.map(y => { const base = r2(y.qty * y.price), tax = r2(base * y.gst / 100), cess = r2(base * (+y.cess || 0) / 100); return { ...y, base, tax, cessAmt: cess, amt: r2(base + tax + cess) }; });
+  const ch = v.charges.map(c => { const base = r2(+c.base || 0), tax = r2(base * (+c.gst || 0) / 100); return { ...c, baseN: base, tax, amt: r2(base + tax) }; });
+  const base = r2(lines.reduce((a, y) => a + y.base, 0)), tax = r2(lines.reduce((a, y) => a + y.tax, 0) + ch.reduce((a, c) => a + c.tax, 0));
+  const cess = r2(lines.reduce((a, y) => a + y.cessAmt, 0)), charges = r2(ch.reduce((a, c) => a + c.amt, 0));
+  return { intra, lines, ch, base, tax, cess, charges, igst: intra ? 0 : tax, cgst: intra ? r2(tax / 2) : 0, sgst: intra ? r2(tax / 2) : 0, total: r2(base + lines.reduce((a, y) => a + y.tax, 0) + cess + charges) };
+}
+function drawInvoice(partial) {
+  const v = invDraft, c = invCalc(v), off = OFFICES[v.o.office], $ = id => document.getElementById(id);
+  const ships = [...new Map(v.items.map(y => [y.shipTo, y])).values()];
+  const drIds = [...new Set(v.items.map(y => y.dr))];
+  $('invPrev').innerHTML = `<h2 class="inv-title">INVOICE</h2>
+    <div class="inv-card">
+      <div class="inv-row"><div><b>Vendor Address</b><br>${esc(VENDOR.name)}<br>Email: ${esc(VENDOR.email)}<br>GSTIN: ${esc(VENDOR.gstin)}<br>Vendor Code: ${esc(VENDOR.code)}<br>${VENDOR.addr.map(esc).join('<br>')}</div>
+        <div class="right">Date: ${v.date ? fmtD(parseISO(v.date)) : ''}<br>Due Date: ${v.due ? fmtD(parseISO(v.due)) : ''}<br>Bill Number: ${esc(v.no)}<br>PO: ${v.o.no}<br>DI: ${drIds.join(', ')}</div></div>
+      <div class="inv-row" style="margin-top:16px"><div><b>Billing Address</b><br>${esc(off.name)}<br>${esc(off.addr)}<br>Gstin : ${esc(off.gstin)}</div>
+        <div class="right"><b>Shipping Address</b><br>${ships.map(y => `${esc(y.shipTo)}${y.shipAddr ? `<br><span class="faint">${esc(y.shipAddr)}</span>` : ''}`).join('<br>')}</div></div>
+    </div>
+    <table class="inv-tbl"><thead><tr><th>SL No.</th><th>Description</th><th>Unit Price</th><th>Qty</th><th>Price</th><th>Base Amt</th><th>Tax Amt</th><th>Cess Amt</th><th class="right">Amount (INR)</th></tr></thead>
+      <tbody>${c.lines.map((y, n) => `<tr><td>${n + 1}</td><td><b>${esc(y.lineCode)}</b><div class="faint">${esc(y.mcId)} · ${esc(y.dr)}</div></td><td>${fmtN(y.price)}</td><td>${fmtN(y.qty)} ${esc(y.unit)}</td>
+        <td>${fmtN(r2(y.qty * y.price))}</td><td>${fmtN(y.base)}</td><td>${fmtN(y.tax)}</td><td>${fmtN(y.cessAmt)}</td><td class="right">${fmtN(y.amt)}</td></tr>`).join('')}
+        ${c.ch.map(x => `<tr><td></td><td>${esc(x.details || x.type)}<div class="faint">${esc(x.type)}</div></td><td colspan="3"></td><td>${fmtN(x.baseN)}</td><td>${fmtN(x.tax)}</td><td>0</td><td class="right">${fmtN(x.amt)}</td></tr>`).join('')}</tbody></table>
+    <div class="inv-sum">${[['Base Amt:', c.base], ['Discount Amt:', 0], ['SGST / UTGST:', c.sgst], ['CGST:', c.cgst], ['IGST:', c.igst], ['Cess Amt:', c.cess], ['Tax Amt:', c.tax, 1],
+      ['Total Additional Charges:', c.charges], ['Total Amt:', c.total, 1]].map(([k, n, b]) => `<div class="${b ? 'b' : ''}"><span>${k}</span><span>${fmtN(n)}</span></div>`).join('')}</div>`;
+  $('invTotals').innerHTML = `<div class="grid2 inv-tot">${[['Base Amount', c.base], [c.intra ? 'CGST Amount' : 'IGST Amount', c.intra ? c.cgst : c.igst],
+      ...(c.intra ? [['SGST / UGST Amount', c.sgst]] : []), ['Cess Amount', c.cess], ['Additional Charges', c.charges], ['Total Invoice Amount', c.total]]
+    .map(([k, n]) => `<div class="field"><label>${k}</label><input class="inp" disabled value="INR ${fmtN(n)}"></div>`).join('')}</div>`;
+  if (partial) return;   // while typing in the item / charge tables, leave them alone so focus stays put
+  /* items still open on the same PO that could be added */
+  const taken = new Set(v.items.map(y => y.key));
+  const more = myDrs().filter(d => d.po === v.o.no).flatMap(d => openIdx(d).map(i => ({ key: selKey(d, i), d, x: d.items[i] }))).filter(m => !taken.has(m.key));
+  $('invLines').innerHTML = `<div class="inv-lbl" style="margin-top:6px">Line Items</div>
+    <div class="table-wrap"><table class="mini inv-items"><thead><tr><th>Name</th><th>HSN Code</th><th>Qty</th><th>Price per unit</th><th>Cess %</th><th>Tax %</th><th>Action</th></tr></thead>
+      <tbody>${v.items.length ? v.items.map(y => `<tr><td><b>${esc(y.lineCode)}</b><div class="faint">${esc(y.mcId)} · ${esc(y.dr)}</div></td><td>${esc(y.hsn)}</td>
+        <td>${fmtN(y.qty)} ${esc(y.unit)}</td><td>${fmtN(y.price)}</td>
+        <td><input class="inp inv-num" type="number" min="0" step="0.01" value="${y.cess}" data-inv-cess="${esc(y.key)}" aria-label="Cess %"></td><td>${y.gst}%</td>
+        <td><button class="btn-del" data-inv-rm="${esc(y.key)}" title="Remove from this invoice">${icon('trash', 9, 2)}</button></td></tr>`).join('')
+        : '<tr><td colspan="7" class="faint">No Line Items Added</td></tr>'}</tbody></table></div>
+    ${v.adding ? `<select class="inp" id="invAdd" style="margin-top:8px"><option value="">Pick an item from another Dispatch Instruction on PO ${v.o.no}…</option>
+        ${more.map(m => `<option value="${esc(m.key)}">${m.d.id} · ${esc(m.x.mcId)} · ${esc(m.x.lineCode)} · ${fmtN(m.x.qty)} ${esc(m.x.unit || '')}</option>`).join('')}</select>`
+      : more.length ? `<button class="link inv-add" data-inv-add>+ Add Line Item</button>` : ''}`;
+  $('invCharges').innerHTML = `<div class="inv-lbl">Additional Charges</div>
+    <div class="table-wrap"><table class="mini inv-items"><thead><tr><th>Details</th><th>Type</th><th>Base Amount</th><th>Tax %</th><th>Amount</th><th>Action</th></tr></thead>
+      <tbody>${c.ch.map((x, n) => `<tr><td><input class="inp" value="${esc(x.details)}" data-inv-ch="${n}:details" aria-label="Details"></td>
+        <td><select class="inp" data-inv-ch="${n}:type" aria-label="Type">${CHARGE_TYPES.map(t => `<option ${t === x.type ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+        <td><input class="inp inv-num" type="number" min="0" step="0.01" value="${x.base}" data-inv-ch="${n}:base" aria-label="Base amount"></td>
+        <td><input class="inp inv-num" type="number" min="0" step="0.01" value="${x.gst}" data-inv-ch="${n}:gst" aria-label="Tax %"></td>
+        <td>${fmtN(x.amt)}</td><td><button class="btn-del" data-inv-chrm="${n}" title="Remove charge">${icon('trash', 9, 2)}</button></td></tr>`).join('')
+        || '<tr><td colspan="6" class="faint">No additional charges</td></tr>'}</tbody></table></div>
+    <button class="link inv-add" data-inv-chadd>+ Add Additional Charges</button>`;
+  document.querySelector('[data-inv-go]').disabled = !v.items.length;
+}
+function submitInvoicePanel() {
+  const v = invDraft, $ = id => document.getElementById(id);
   const err = (id, msg) => { $(id + 'Err').hidden = !msg; $(id + 'Err').textContent = msg || ''; $(id).classList.toggle('bad', !!msg); return !msg; };
-  const v = id => $(id).value.trim();
+  const taken = new Set([...readInvs().map(x => x.no.toLowerCase()), ...readDRs().filter(d => d.invoice && !d.invList).map(d => d.invoice.no.toLowerCase())]);
   const ok = [
-    err('invNo', v('invNo') ? '' : 'Invoice number is required'),
-    err('invDate', v('invDate') ? '' : 'Invoice date is required'),
-    err('invAmt', +v('invAmt') > 0 ? '' : 'Enter the invoice amount'),
+    err('invNo', !v.no ? 'Invoice number is required' : taken.has(v.no.toLowerCase()) ? 'This invoice number is already used' : ''),
+    err('invDate', v.date ? '' : 'Invoice date is required'),
+    err('invDue', v.due && v.due < v.date ? 'Due date can’t be before the invoice date' : ''),
   ].every(Boolean);
-  if (!ok) return;
-  const all = readDRs(), d = all.find(x => x.id === drId);
-  if (d.invoice) { closeModal(); rerender(); return toast(`An invoice is already submitted against ${d.id}`); }
-  d.invoice = { no: v('invNo'), date: v('invDate'), amount: r2(+v('invAmt')), docs: [...$('invDocs').files].map(f => f.name), remarks: v('invRemarks'),
-    createdAt: new Date().toISOString() };
-  d.status = 'Invoice Submitted';
-  writeDRs(all);
+  if (!ok || !v.items.length) return;
+  /* someone may have billed these items meanwhile (another tab) */
+  const drs = new Map(readDRs().map(d => [d.id, d]));
+  const gone = v.items.filter(y => { const d = drs.get(y.dr); return !d || itemInv(d, y.idx); });
+  if (gone.length) { closeModal(); rerender(); return toast(`${gone.map(y => y.mcId).join(', ')} already invoiced — please reselect`); }
+  const c = invCalc(v);
+  const inv = { id: 'INV-' + Date.now().toString(36).toUpperCase(), no: v.no, po: v.o.no, vendor: vendorKey, date: v.date, due: v.due || null, asn: v.asn, selfAddr: VENDOR.name,
+    docs: v.docs, remarks: v.remarks,
+    items: c.lines.map(y => ({ dr: y.dr, idx: y.idx, mcId: y.mcId, lineCode: y.lineCode, hsn: y.hsn, qty: y.qty, unit: y.unit, price: y.price, gst: y.gst, cess: +y.cess || 0 })),
+    charges: c.ch.map(x => ({ details: x.details, type: x.type, base: x.baseN, gst: +x.gst || 0 })),
+    base: c.base, igst: c.igst, cgst: c.cgst, sgst: c.sgst, cess: c.cess, chargesTotal: c.charges, amount: c.total,
+    status: 'Pending Approval', createdAt: new Date().toISOString() };
+  writeInvs([...readInvs(), inv]);
+  v.items.forEach(y => ui.diSel.delete(y.key));
+  invDraft = null;
   closeModal(); rerender();
-  toast(`Invoice ${d.invoice.no} submitted against ${d.id}`);
+  const n = new Set(inv.items.map(y => y.dr)).size;
+  toast(`Invoice ${inv.no} submitted for ${inv.items.length} item${inv.items.length > 1 ? 's' : ''} across ${n} Dispatch Instruction${n > 1 ? 's' : ''} · pending approval`);
 }
 
 const rerender = () => { const y = scrollY; route(); scrollTo(0, y); };
 /* live updates from the Buyer / Employee portals; an open IR pop-up refreshes in place (keeping any half-typed message) */
 window.addEventListener('storage', e => {
-  if (e.key !== IR_STORE && e.key !== DR_STORE) return;
+  if (![IR_STORE, DR_STORE, INV_STORE].includes(e.key)) return;
   rerender();
   const cur = byId(location.hash.split('/')[2] || 0);
   if (ui.irOpen && cur && document.querySelector('.ir-view')) {
@@ -1464,6 +1687,7 @@ document.addEventListener('click', e => {
   const d = t.dataset;
   const cur = byId((location.hash.split('/')[2]) || 0);
   if (d.nav) { location.hash = `#/${d.nav}`; return; }
+  if (d.ditab) { ui.diTab = d.ditab; route(); return; }
   if (d.tab) { ui.tab = d.tab; ui.status = null; if (location.hash !== '#/orders') location.hash = '#/orders'; else route(); return; }
   if (d.open) { location.hash = `#/orders/${d.open}`; return; }
   if ('back' in d) { location.hash = '#/orders'; return; }
@@ -1479,8 +1703,17 @@ document.addEventListener('click', e => {
     return; }
   if (d.grn && cur) { grnModal(cur, cur.grns[+d.grn]); return; }
   if (d.dr) { drModal(d.dr); return; }
-  if (d.invNew) { invoiceForm(d.invNew); return; }
-  if (d.invSubmit) { submitInvoice(d.invSubmit); return; }
+  if (d.invNew) { const dr = myDrs().find(x => x.id === d.invNew); if (dr) openInvoicePanel(openIdx(dr).map(i => selKey(dr, i))); return; }
+  if (d.diTog) { ui.diOpen.has(d.diTog) ? ui.diOpen.delete(d.diTog) : ui.diOpen.add(d.diTog); route(); return; }
+  if ('diClear' in d) { ui.diSel.clear(); route(); return; }
+  if ('invSel' in d) { openInvoicePanel([...ui.diSel]); return; }
+  if (invDraft && document.getElementById('invPrev')) {
+    if (d.invRm) { invDraft.items = invDraft.items.filter(y => y.key !== d.invRm); drawInvoice(); return; }
+    if ('invAdd' in d) { invDraft.adding = true; drawInvoice(); document.getElementById('invAdd')?.focus(); return; }
+    if ('invChadd' in d) { invDraft.charges.push({ details: '', type: 'Freight', base: '', gst: 18 }); drawInvoice(); return; }
+    if ('invChrm' in d) { invDraft.charges.splice(+d.invChrm, 1); drawInvoice(); return; }
+    if ('invGo' in d) { submitInvoicePanel(); return; }
+  }
   if (d.clarSend && cur) { sendClar(cur, d.clarSend); return; }
   if (d.mcopen && cur) { const [i, k] = d.mcopen.split(':').map(Number); mcModal(cur, i, k); return; }
   if (d.irNew && cur) { if (t.disabled) return; irMergeModal(cur, [d.irNew, ...ui.irSel]); return; }
@@ -1510,12 +1743,40 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('input', e => {
   if (e.target.dataset?.irq && irDraft) { irDraft.qty[e.target.dataset.irq] = e.target.value; return; }
+  if (invDraft && e.target.closest?.('.inv-form')) {
+    const t = e.target, fld = { invNo: 'no', invDate: 'date', invDue: 'due', invRemarks: 'remarks' }[t.id];
+    if (fld) { invDraft[fld] = t.value.trim(); t.classList.remove('bad'); const er = document.getElementById(t.id + 'Err'); if (er) er.hidden = true; }
+    if (t.dataset.invCess) invDraft.items.find(y => y.key === t.dataset.invCess).cess = t.value;
+    if (t.dataset.invCh) { const [n, k] = t.dataset.invCh.split(':'); invDraft.charges[+n][k] = t.value; }
+    drawInvoice(true); return;
+  }
+  if (e.target.id === 'diQ') {
+    ui.diQ = e.target.value; const pos = e.target.selectionStart; route();
+    const q = document.getElementById('diQ'); q.focus(); q.setSelectionRange(pos, pos); return;
+  }
   if (e.target.id === 'q') {
     ui.q = e.target.value; const pos = e.target.selectionStart; route();
     const q = document.getElementById('q'); q.focus(); q.setSelectionRange(pos, pos);
   }
 });
 document.addEventListener('change', e => {
+  const ds = e.target.dataset || {};
+  if (ds.diItem) { diSelect([ds.diItem], e.target.checked); return; }
+  if (ds.diAll) { const d = myDrs().find(x => x.id === ds.diAll); if (d) diSelect(openIdx(d).map(i => selKey(d, i)), e.target.checked); return; }
+  if (invDraft && e.target.closest?.('.inv-form')) {
+    const t = e.target;
+    if (t.id === 'invAsn') { invDraft.asn = t.checked; return; }
+    if (t.id === 'invDocs') { invDraft.docs = [...t.files].map(f => f.name); document.getElementById('invDocNames').textContent = invDraft.docs.join(', '); return; }
+    if (t.id === 'invAdd') {
+      if (t.value) { const [id, i] = t.value.split('#'), dr = myDrs().find(x => x.id === id), x = dr.items[+i];
+        invDraft.items.push({ key: t.value, dr: id, idx: +i, mcId: x.mcId, lineCode: x.lineCode, desc: x.lineDesc || '', hsn: hsnOf(dr.order, x),
+          qty: x.qty, unit: x.unit || '', price: x.price, gst: x.gst, cess: 0, shipTo: x.shipTo, shipAddr: x.shipAddr || '' }); }
+      invDraft.adding = false; drawInvoice(); return;
+    }
+    if (t.dataset.invCh) { const [n, k] = t.dataset.invCh.split(':'); invDraft.charges[+n][k] = t.value; }
+    if (t.dataset.invCess || t.dataset.invCh) { drawInvoice(); return; }
+    return;
+  }
   const curPO = byId(location.hash.split('/')[2] || 0);
   if (e.target.dataset?.irsel && curPO) { e.target.checked ? ui.irSel.add(e.target.dataset.irsel) : ui.irSel.delete(e.target.dataset.irsel); rerender(); return; }
   if (e.target.dataset?.irselLine && curPO) {
@@ -1526,7 +1787,7 @@ document.addEventListener('change', e => {
   if (e.target.id === 'irAdd' && curPO && irDraft && e.target.value) {
     const id = e.target.value; irDraft.ids.push(id); irDraft.qty[id] = mcAvail(curPO, findMc(curPO, id).m); drawIrItems(curPO); return;
   }
-  if (e.target.id === 'acct') { setVendor(e.target.value); location.hash === '#/orders' ? route() : (location.hash = '#/orders'); toast(`Logged in as ${VENDOR.name}`); return; }
+  if (e.target.id === 'acct') { setVendor(e.target.value); ['#/orders', '#/dispatch'].includes(location.hash) ? route() : (location.hash = '#/orders'); toast(`Logged in as ${VENDOR.name}`); return; }
   if (e.target.id === 'from' || e.target.id === 'to') {
     if (!e.target.value) return;
     const [y, m, d] = e.target.value.split('-').map(Number);

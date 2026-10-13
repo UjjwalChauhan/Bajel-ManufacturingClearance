@@ -527,7 +527,7 @@ function save() { try { localStorage.setItem(STORE, JSON.stringify({ reqs: REQS,
    so the Vendor and Buyer portals show the status as it changes. A merged IR (several MC items) is one approval.
    ===================================================================== */
 const IR_STORE = 'bajel.ir.v2';
-const readSharedIRs = () => { try { return JSON.parse(localStorage.getItem(IR_STORE) || 'null')?.irs || []; } catch (e) { return []; } };
+const readSharedIRs = () => { try { return (JSON.parse(localStorage.getItem(IR_STORE) || 'null')?.irs || []).map(x => x.status === 'Report Pending' ? { ...x, status: 'Result Pending' } : x); } catch (e) { return []; } };
 const writeSharedIRs = irs => { try { localStorage.setItem(IR_STORE, JSON.stringify({ irs })); } catch (e) {} };
 /* register the IR's vendor (and its contact person, who is the requester) so the existing lookups work */
 function vendorRefs(v) {
@@ -572,7 +572,7 @@ function commitIR(r) {
     x.appr = appr;
     const waived = ws[x.mcId];
     if (r.status === 'approved' && x.status === 'Pending') {
-      Object.assign(x, { status: 'Report Pending', approvedAt: last.at, approvedBy: `${P(last.by).name} (${P(last.by).role})` });
+      Object.assign(x, { status: 'Result Pending', approvedAt: last.at, approvedBy: `${P(last.by).name} (${P(last.by).role})` });
       if (waived) Object.assign(x, { status: 'Ready to Dispatch', accepted: x.qty, rejected: 0, inspectedAt: last.at.slice(0, 10), inspectionWaived: true,
         inspector: `Waived by ${P(waived.by).name}`, inspRemarks: waived.note });
     }
@@ -736,7 +736,7 @@ function renderHome() {
   const q = (ic, l) => `<button data-act="soon" data-what="${l}"><span class="circ">${icon(ic, 22, 1.4)}</span>${l}</button>`;
   const tr = (bg, em, l, isNew) => `<button data-act="soon" data-what="${l}"><span class="circ" style="background:${bg}">${isNew ? '<span class="new">New</span>' : ''}${em}</span>${l}</button>`;
   const mails = [
-    ['rakesh', 'Dispatch docs — DR-56078-01'], ['sandeep', 'Invoice IFM/26/2231'], ['rakesh', 'Revised e-way bill'], ['meera', 'PBG 0001136 scan'], ['karan', 'Comparative statement v3'] ];
+    ['rakesh', 'Dispatch docs — DI-56078-01'], ['sandeep', 'Invoice IFM/26/2231'], ['rakesh', 'Revised e-way bill'], ['meera', 'PBG 0001136 scan'], ['karan', 'Comparative statement v3'] ];
   return `${topBar('Welcome, ' + P(me).name.split(' ')[0])}
     <div class="h2">Expense</div>
     <div class="quick">${q('receipt','Add Expense')}${q('receipt','Bulk Add Expense')}${q('layers','Create Voucher')}${q('db','Request Advance')}${q('gauge','Log Miles')}</div>
@@ -898,7 +898,7 @@ function leftPane(r) {
     return `<h2>Inspection Request · ${esc(r.ref)}</h2>
       ${r.status === 'withdrawn' ? `<div class="note">${icon('info', 18)}<span>Withdrawn by the vendor${r.withdrawReason ? ` — “${esc(r.withdrawReason)}”` : ''}. No action needed.</span></div>` : ''}
       ${nWaived ? `<div class="note">${icon('info', 18)}<span>Inspection waived for ${nWaived} of ${r.lines.length} item${r.lines.length > 1 ? 's' : ''}. After final approval ${nWaived > 1 ? 'those items are' : 'that item is'} accepted in full without an inspection report${nWaived < r.lines.length ? '; the rest still go for inspection' : ''}.</span></div>` : ''}
-      <div class="note info">${icon('info', 18)}<span>Raised by the vendor on the Vendor Portal. Once every approver approves, Hindalco's buyer can record the inspection result and raise the Dispatch Request.</span></div>
+      <div class="note info">${icon('info', 18)}<span>Raised by the vendor on the Vendor Portal. Once every approver approves, Hindalco's buyer can record the inspection result and raise the Dispatch Instruction.</span></div>
       ${vendorBlock(r)}<hr class="hr">
       <div class="d-sec">Inspection Details</div>
       <div class="kv-grid">${kv('PO Number', esc(r.poNo))}${kv('Proposed Inspection Date', fDate(r.inspDate))}${kv('Inspection Location', esc(r.location), true)}${kv('Vendor Contact', esc(r.contact), true)}${r.remarks ? kv('Vendor Remarks', esc(r.remarks), true) : ''}</div>
