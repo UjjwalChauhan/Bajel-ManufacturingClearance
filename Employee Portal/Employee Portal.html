@@ -206,8 +206,18 @@
   .act-app:hover{background:#D3EBDB}
   .act-hold{background:var(--primary);color:#fff;font-size:17px}
   .act-hold:hover{background:var(--primary-600)}
-  .act-waive{background:#fff;color:var(--primary);border:1.5px solid var(--primary);font-size:17px}
-  .act-waive:hover{background:#F3F1FD}
+  .sw{position:relative;display:inline-block;width:40px;height:22px;cursor:pointer;vertical-align:middle}
+  .sw input{position:absolute;opacity:0;width:0;height:0}
+  .sw span{position:absolute;inset:0;background:#C9C9D3;border-radius:11px;transition:background .15s}
+  .sw span::after{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .sw input:checked + span{background:var(--success)}
+  .sw input:checked + span::after{transform:translateX(18px)}
+  .sw input:focus-visible + span{box-shadow:0 0 0 3px var(--primary-50)}
+  .insp-lbl{font-size:11.5px;font-weight:600;margin-top:4px;color:var(--success)}
+  .insp-lbl.off{color:#B26A00}
+  .insp-by{font-size:11px;color:var(--muted)}
+  .insp-hint{font-size:12.5px;color:var(--muted);margin-bottom:14px}
+  .items tr.wrow td{background:#FFF8EE;text-align:left;padding:12px 14px}
   .done-banner{grid-column:1/-1;display:flex;align-items:center;gap:10px;font-size:13px;padding:12px 14px;border-radius:5px}
   .rq-label{font-size:17px;margin-bottom:16px}
   .rq-card{display:flex;gap:16px;border:1px solid var(--border);border-radius:6px;padding:22px 18px;align-items:flex-start;font-size:13px;line-height:1.55}
@@ -415,8 +425,8 @@ function toast(msg, ic = 'check') {
    ===================================================================== */
 const PEOPLE = {
   rahul:   { name:'Rahul Verma',     email:'rahul.verma@hindalco.com',     dept:'Procurement',        office:'UP-Renukoot',      code:'0012', role:'Procurement Manager', persona:true },
-  priya:   { name:'Priya Nair',      email:'priya.nair@hindalco.com',      dept:'Quality Assurance',  office:'Odisha-Hirakud',   code:'0031', role:'QA Head', persona:true },
-  amit:    { name:'Amit Khanna',     email:'amit.khanna@hindalco.com',     dept:'Operations',         office:'UP-Renukoot',      code:'0004', role:'Plant Head' },
+  priya:   { name:'Priya Nair',      email:'priya.nair@hindalco.com',      dept:'Quality Assurance',  office:'Odisha-Hirakud',   code:'0031', role:'QA Head', persona:true, canWaive:true },
+  amit:    { name:'Amit Khanna',     email:'amit.khanna@hindalco.com',     dept:'Operations',         office:'UP-Renukoot',      code:'0004', role:'Plant Head', canWaive:true },
   karan:   { name:'Karan Sharma',    email:'karan.sharma@hindalco.com',    dept:'Procurement',        office:'UP-Renukoot',      code:'0045', role:'Buyer' },
   srinivas:{ name:'Srinivas Rao',    email:'srinivas.rao@hindalco.com',    dept:'Engineering',        office:'Maharashtra-Pune', code:'0007', role:'Buyer' },
   anil:    { name:'Anil Gupta',      email:'anil.gupta@hindalco.com',      dept:'Stores',             office:'Odisha-Aditya',    code:'0058', role:'Stores Officer' },
@@ -553,12 +563,14 @@ function commitIR(r) {
   const all = readSharedIRs(), items = all.filter(x => x.po === r.poNo && x.id === r.irId);
   if (!items.length || items[0].status === 'Withdrawn') return false;
   const appr = { chain: r.chain, level: r.level, state: r.status,
-    history: r.history.filter(h => !['start', 'withdrawn'].includes(h.t)).map(h => ({ t: h.t, by: out(h.by), at: new Date(h.at).toISOString(), note: h.note || '', ...(h.waive ? { waive: true } : {}) })),
+    history: r.history.filter(h => !['start', 'withdrawn'].includes(h.t)).map(h => ({ t: h.t, by: out(h.by), at: new Date(h.at).toISOString(), note: h.note || '',
+      ...(h.waive ? { waive: true } : {}), ...(h.waivers ? { waivers: h.waivers } : {}) })),
     clar: r.clar.map(c => ({ by: out(c.by), at: new Date(c.at).toISOString(), text: c.text })) };
   const last = [...appr.history].reverse().find(h => h.t === 'approved' || h.t === 'declined');
+  const ws = waiverState(r);
   items.forEach(x => {
     x.appr = appr;
-    const waived = appr.history.find(h => h.waive);
+    const waived = ws[x.mcId];
     if (r.status === 'approved' && x.status === 'Pending') {
       Object.assign(x, { status: 'Report Pending', approvedAt: last.at, approvedBy: `${P(last.by).name} (${P(last.by).role})` });
       if (waived) Object.assign(x, { status: 'Ready to Dispatch', accepted: x.qty, rejected: 0, inspectedAt: last.at.slice(0, 10), inspectionWaived: true,
@@ -590,6 +602,30 @@ const isMine = r => (r.status === 'pending' || r.status === 'hold') && currentAp
 const actedByMe = r => r.history.some(h => ['approved','declined'].includes(h.t) && h.by === me);
 const pendingCount = () => allReqs().filter(r => r.status === 'pending' && isMine(r)).length;
 const holdCount = () => allReqs().filter(r => r.status === 'hold' && isMine(r)).length;
+
+/* Inspection waivers are per IR line (MC). Only approvers flagged canWaive may change them; each of their approvals
+   records the full set as waivers {mc: reason}, so the latest one wins. Older records with a bare waive:true waived every line. */
+const canWaive = k => !!PEOPLE[k]?.canWaive;
+const canEditWaivers = r => r.type === 'ir' && isMine(r) && canWaive(me);
+function waiverState(r) {
+  let s = {};
+  r.history.forEach(h => {
+    if (h.t !== 'approved' || !(h.waivers || h.waive)) return;
+    const w = h.waivers || Object.fromEntries(r.lines.map(l => [l.mc, h.note || '']));
+    s = Object.fromEntries(Object.entries(w).map(([mc, note]) => [mc, s[mc]?.note === note ? s[mc] : { note, by: h.by }]));
+  });
+  return s;
+}
+/* the open drawer's unsaved toggles and reasons */
+function waiveDraft(r) {
+  if (ui.wd?.id !== r.id || ui.wd.me !== me) {
+    const s = waiverState(r);
+    ui.wd = { id: r.id, me, err: false, lines: Object.fromEntries(r.lines.map(l => [l.mc, { off: !!s[l.mc], reason: s[l.mc]?.note || '' }])) };
+  }
+  return ui.wd;
+}
+const draftWaivers = r => { const d = waiveDraft(r); return Object.fromEntries(r.lines.filter(l => d.lines[l.mc].off).map(l => [l.mc, d.lines[l.mc].reason.trim()])); };
+const WAIVE_CHIPS = ['Catalogue item — test certificate verified', 'Repeat supply from approved vendor', 'Third-party inspection report accepted'];
 
 function statusChip(r, forList = true) {
   if (r.status === 'approved') return '<span class="status s-approved">Approved</span>';
@@ -835,16 +871,42 @@ function leftPane(r) {
       ${filesBlock(r.files)}`;
   }
   if (r.type === 'ir') {
+    const edit = canEditWaivers(r), ws = waiverState(r), d = edit && waiveDraft(r);
+    const nWaived = Object.keys(ws).length;
+    const waivers = r.chain.filter(canWaive).map(k => P(k).name);
+    const inspCell = l => {
+      if (edit) {
+        const on = !d.lines[l.mc].off;
+        return `<label class="sw" title="${on ? 'Switch off to waive inspection for this item' : 'Switch on to require inspection'}"><input type="checkbox" data-wline="${esc(l.mc)}" ${on ? 'checked' : ''}><span></span></label>
+          <div class="insp-lbl ${on ? '' : 'off'}">${on ? 'Required' : 'Waived'}</div>`;
+      }
+      const w = ws[l.mc];
+      return w ? `<div class="insp-lbl off">Waived</div><div class="insp-by">by ${esc(P(w.by).name)}</div>` : '<div class="insp-lbl">Required</div>';
+    };
+    const reasonRow = l => {
+      if (edit) {
+        const x = d.lines[l.mc];
+        if (!x.off) return '';
+        return `<tr class="wrow"><td colspan="6"><div class="field ${d.err && !x.reason.trim() ? 'invalid' : ''}" style="margin-bottom:8px">
+          <label>Reason for waiving inspection · ${esc(l.mc)} <span class="req">*</span></label>
+          <textarea data-wreason="${esc(l.mc)}" placeholder="e.g. Catalogue item, test certificate verified">${esc(x.reason)}</textarea><span class="err">A reason is required for every item with inspection switched off.</span></div>
+          <div class="chips">${WAIVE_CHIPS.map(c => `<button data-wchip="${esc(c)}" data-mc="${esc(l.mc)}">${esc(c)}</button>`).join('')}</div></td></tr>`;
+      }
+      const w = ws[l.mc];
+      return w?.note ? `<tr class="wrow"><td colspan="6"><b>Waiver reason:</b> “${esc(w.note)}”</td></tr>` : '';
+    };
     return `<h2>Inspection Request · ${esc(r.ref)}</h2>
       ${r.status === 'withdrawn' ? `<div class="note">${icon('info', 18)}<span>Withdrawn by the vendor${r.withdrawReason ? ` — “${esc(r.withdrawReason)}”` : ''}. No action needed.</span></div>` : ''}
-      ${(w => w ? `<div class="note">${icon('info', 18)}<span>Inspection waived by ${esc(P(w.by).name)}${w.note ? ` — “${esc(w.note)}”` : ''}. After final approval the full quantity is accepted without an inspection report.</span></div>` : '')(r.history.find(h => h.waive))}
+      ${nWaived ? `<div class="note">${icon('info', 18)}<span>Inspection waived for ${nWaived} of ${r.lines.length} item${r.lines.length > 1 ? 's' : ''}. After final approval ${nWaived > 1 ? 'those items are' : 'that item is'} accepted in full without an inspection report${nWaived < r.lines.length ? '; the rest still go for inspection' : ''}.</span></div>` : ''}
       <div class="note info">${icon('info', 18)}<span>Raised by the vendor on the Vendor Portal. Once every approver approves, Hindalco's buyer can record the inspection result and raise the Dispatch Request.</span></div>
       ${vendorBlock(r)}<hr class="hr">
       <div class="d-sec">Inspection Details</div>
       <div class="kv-grid">${kv('PO Number', esc(r.poNo))}${kv('Proposed Inspection Date', fDate(r.inspDate))}${kv('Inspection Location', esc(r.location), true)}${kv('Vendor Contact', esc(r.contact), true)}${r.remarks ? kv('Vendor Remarks', esc(r.remarks), true) : ''}</div>
-      <hr class="hr"><div class="d-sec" style="margin-bottom:16px">Clearances offered for inspection (${r.lines.length})</div>
-      <table class="items"><thead><tr><th>MC ID</th><th>Item</th><th>Shipping Location</th><th>Cleared Qty</th><th>Inspection Qty</th></tr></thead><tbody>
-        ${r.lines.map(l => `<tr><td><b>${esc(l.mc)}</b></td><td class="l">${l.code ? `<b>${esc(l.code)}</b><br>` : ''}${esc(l.desc)}</td><td class="l">${esc(l.loc || '—')}</td><td>${l.mcQty != null ? `${num(l.mcQty)} ${esc(l.unit)}` : '—'}</td><td><b>${num(l.qty)} ${esc(l.unit)}</b></td></tr>`).join('')}
+      <hr class="hr"><div class="d-sec" style="margin-bottom:6px">Clearances offered for inspection (${r.lines.length})</div>
+      <div class="insp-hint">${edit ? 'Switch <b>Inspection</b> off for any item that doesn’t need a physical inspection — a reason is required for each one.'
+        : waivers.length ? `Inspection can be waived per item by ${esc(waivers.join(' or '))}.` : 'No approver in this flow can waive inspection.'}</div>
+      <table class="items"><thead><tr><th>MC ID</th><th>Item</th><th>Shipping Location</th><th>Cleared Qty</th><th>Inspection Qty</th><th>Inspection</th></tr></thead><tbody>
+        ${r.lines.map(l => `<tr><td><b>${esc(l.mc)}</b></td><td class="l">${l.code ? `<b>${esc(l.code)}</b><br>` : ''}${esc(l.desc)}</td><td class="l">${esc(l.loc || '—')}</td><td>${l.mcQty != null ? `${num(l.mcQty)} ${esc(l.unit)}` : '—'}</td><td><b>${num(l.qty)} ${esc(l.unit)}</b></td><td>${inspCell(l)}</td></tr>${reasonRow(l)}`).join('')}
       </tbody></table>
       ${filesBlock(r.files)}`;
   }
@@ -877,7 +939,7 @@ function rightApproval(r) {
     const st = h ? (h.t === 'declined' ? 'dec' : 'done') : (i === r.level && (r.status === 'pending' || r.status === 'hold') ? 'cur' : '');
     const tag = h ? (h.t === 'declined' ? '<span class="status s-declined">Declined</span>' : '<span class="status s-approved">Approved</span>')
       : st === 'cur' ? (r.status === 'hold' ? '<span class="status s-hold">On Hold</span>' : '<span class="status s-pending">Pending</span>') : '';
-    return `<div class="lv ${st}"><span class="num">${h?.t === 'approved' ? icon('check', 13, 3) : i + 1}</span><span>${esc(P(k).name)}${k === me ? ' (you)' : ''}<small>${esc(P(k).role)}</small></span><span class="tag">${tag}</span></div>`;
+    return `<div class="lv ${st}"><span class="num">${h?.t === 'approved' ? icon('check', 13, 3) : i + 1}</span><span>${esc(P(k).name)}${k === me ? ' (you)' : ''}<small>${esc(P(k).role)}${r.type === 'ir' && canWaive(k) ? ' · Can waive inspection' : ''}</small></span><span class="tag">${tag}</span></div>`;
   }).join('');
 
   return `<div class="rq-label">Requested By</div>
@@ -897,7 +959,11 @@ function timelineItems(r) {
     const p = P(h.by);
     const n = out.length;
     if (h.t === 'start') out.push({ st:'done', lbl:'App Started', nm:`Submitted by ${p.name}`, ln:['Type: start', `Sent on : ${fTime(h.at)}`], tat });
-    if (h.t === 'approved') out.push({ st:'done', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, `Status: APPROVED${h.waive ? ' · INSPECTION WAIVED' : ''}`, `Actioned on : ${fTime(h.at)}`], tat, note:h.note });
+    if (h.t === 'approved') {
+      const w = h.waivers || (h.waive ? Object.fromEntries(r.lines.map(l => [l.mc, h.note || ''])) : {}), wn = Object.keys(w).length;
+      out.push({ st:'done', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, `Status: APPROVED${wn ? ` · INSPECTION WAIVED (${wn} of ${r.lines.length})` : ''}`, `Actioned on : ${fTime(h.at)}`,
+        ...Object.entries(w).map(([mc, why]) => `Waived ${mc}${why ? ` — ${why}` : ''}`)], tat, note:h.waivers || !h.waive ? h.note : '' });
+    }
     if (h.t === 'declined') out.push({ st:'declined', lbl:'Approver', nm:p.name, ln:[`Type: ${T}`, 'Status: DECLINED', `Actioned on : ${fTime(h.at)}`], tat, note:h.note });
     if (h.t === 'hold') out.push({ st:'hold', lbl:'Put on Hold', nm:p.name, ln:[`Status: ON HOLD`, `On : ${fTime(h.at)}`], tat, note:h.note });
     if (h.t === 'unhold') out.push({ st:'done', lbl:'Hold Released', nm:p.name, ln:[`On : ${fTime(h.at)}`], tat, note:h.note });
@@ -950,8 +1016,7 @@ function renderDrawer() {
   else if (canAct) foot = `
     <button class="act act-dec" data-act="decline">${icon('x', 18, 2)} Decline</button>
     <button class="act act-app" data-act="approve">${icon('check', 18, 2)} Approve</button>
-    ${r.type === 'ir' ? `<button class="act act-waive" data-act="waive" title="Approve without a physical inspection">Waive Inspection</button>` : ''}
-    ${r.status === 'hold' ? `<button class="act act-hold ${r.type === 'ir' ? '' : 'wide'}" data-act="unhold">${icon('play', 16, 2)} Release Hold</button>` : `<button class="act act-hold ${r.type === 'ir' ? '' : 'wide'}" data-act="hold">Hold Approval</button>`}`;
+    ${r.status === 'hold' ? `<button class="act act-hold wide" data-act="unhold">${icon('play', 16, 2)} Release Hold</button>` : `<button class="act act-hold wide" data-act="hold">Hold Approval</button>`}`;
   else if (myAct) foot = `<div class="done-banner note ${myAct.t === 'declined' ? 'bad' : 'ok'}" style="margin:0">${icon(myAct.t === 'declined' ? 'x' : 'check', 18, 2)}<span>You ${myAct.t} this on ${fTime(myAct.at)}${r.status === 'pending' ? ` · now pending with ${esc(P(currentApprover(r)).name)}` : ''}</span></div>`;
   else if (r.asker === me) foot = `<div class="done-banner note info" style="margin:0">${icon('info', 18)}<span>${r.status === 'approved' ? 'Fully approved.' : r.status === 'declined' ? 'Declined.' : `Waiting on ${esc(P(currentApprover(r)).name)} (${r.status === 'hold' ? 'on hold' : 'level ' + (r.level + 1) + ' of ' + r.chain.length})`}</span></div>`;
   else foot = '';
@@ -979,18 +1044,17 @@ function renderModal() {
   const rs = modal.ids.map(id => findReq(id)).filter(Boolean);
   const many = rs.length > 1;
   const list = many ? `<div class="mini-list">${rs.map(r => `${esc(r.ref)} · <span style="color:var(--muted)">${esc(TYPES[r.type].label)}</span>`).join('<br>')}</div>` : '';
+  const wv = modal.kind === 'approve' && !many && rs[0] && canEditWaivers(rs[0]) ? Object.entries(draftWaivers(rs[0])) : [];
+  const wList = wv.length ? `<div class="mini-list" style="margin-bottom:14px"><b>Inspection waived for ${wv.length} of ${rs[0].lines.length} item${rs[0].lines.length > 1 ? 's' : ''}</b><br>${wv.map(([mc, why]) => `${esc(mc)} · <span style="color:var(--muted)">${esc(why)}</span>`).join('<br>')}</div>` : '';
   const M = {
-    approve: { h:'Approve', p: many ? `Are you sure you want to approve these ${rs.length} requests?` : 'Are you sure you want to approve this request?',
-      body: `${list}<div class="field" style="margin-top:${many ? 14 : 0}px"><label>Comment (optional)</label><textarea id="mNote" placeholder="Add a note for the requester and next approver"></textarea></div>`, btn:'Approve', cls:'btn-primary' },
+    approve: { h:'Approve', p: many ? `Are you sure you want to approve these ${rs.length} requests?` : wv.length ? `Waived items are accepted in full without an inspection report after the final approval${wv.length < rs[0].lines.length ? '; the rest still go for inspection' : ''}.` : 'Are you sure you want to approve this request?',
+      body: `${list}${wList}<div class="field" style="margin-top:${many ? 14 : 0}px"><label>Comment (optional)</label><textarea id="mNote" placeholder="Add a note for the requester and next approver"></textarea></div>`, btn:'Approve', cls:'btn-primary' },
     decline: { h:'Decline', p: many ? `Decline ${rs.length} requests? The requesters will be notified.` : 'The requester will be notified with your reason.',
       body: `${list}<div class="field" id="fNote" style="margin-top:${many ? 14 : 0}px"><label>Reason <span class="req">*</span></label><textarea id="mNote" placeholder="Why is this request being declined?"></textarea><span class="err">Please add a reason.</span></div>
         <div class="chips">${['Budget not available','Rate higher than last purchase','Documents incomplete','Duplicate request'].map(c => `<button data-mchip="${c}">${c}</button>`).join('')}</div>`, btn:'Decline', cls:'btn-danger' },
     hold: { h:'Hold Approval', p:'The request moves to your Hold tab. You can approve, decline or release it later.',
       body: `<div class="field" id="fNote"><label>Reason for hold <span class="req">*</span></label><textarea id="mNote" placeholder="e.g. Awaiting revised e-way bill from vendor"></textarea><span class="err">Please add a reason.</span></div>
         <div class="field"><label><input type="checkbox" class="chk" id="mAsk" checked style="vertical-align:-3px;margin-right:6px">Also send this as a clarification to the requester</label></div>`, btn:'Put on Hold', cls:'btn-primary' },
-    waive: { h:'Waive Inspection', p: `Approve this Inspection Request without a physical inspection. ${rs[0]?.level + 1 < rs[0]?.chain.length ? `It still goes to ${esc(P(rs[0].chain[rs[0].level + 1]).name)} for approval; after` : 'After'} the final approval the full inspection quantity is marked accepted and the request is Ready to Dispatch — no inspection report is recorded.`,
-      body: `<div class="field" id="fNote"><label>Reason for waiver <span class="req">*</span></label><textarea id="mNote" placeholder="e.g. Catalogue item, test certificate verified"></textarea><span class="err">Please add a reason.</span></div>
-        <div class="chips">${['Catalogue item — test certificate verified','Repeat supply from approved vendor','Third-party inspection report accepted'].map(c => `<button data-mchip="${c}">${c}</button>`).join('')}</div>`, btn:'Approve & Waive Inspection', cls:'btn-primary' },
     unhold: { h:'Release Hold', p:'The request goes back to your Pending queue.', body:`<div class="field"><label>Comment (optional)</label><textarea id="mNote" placeholder="e.g. Corrected documents received"></textarea></div>`, btn:'Release Hold', cls:'btn-primary' },
   }[modal.kind];
   return `<div class="overlay" data-act="m-close-bg"><div class="modal" role="dialog" aria-modal="true">
@@ -1002,12 +1066,13 @@ function renderModal() {
 
 function confirmModal() {
   const note = ($('#mNote')?.value || '').trim();
-  if ((modal.kind === 'decline' || modal.kind === 'hold' || modal.kind === 'waive') && !note) { $('#fNote').classList.add('invalid'); $('#mNote').focus(); return; }
+  if ((modal.kind === 'decline' || modal.kind === 'hold') && !note) { $('#fNote').classList.add('invalid'); $('#mNote').focus(); return; }
   const now = new Date();
   const rs = modal.ids.map(id => findReq(id)).filter(Boolean);
   rs.forEach(r => {
-    if (modal.kind === 'approve' || modal.kind === 'waive') {
-      r.history.push({ t:'approved', by:me, at:now, note, ...(modal.kind === 'waive' ? { waive:true } : {}) });
+    if (modal.kind === 'approve') {
+      const wv = rs.length === 1 && canEditWaivers(r) ? draftWaivers(r) : null;
+      r.history.push({ t:'approved', by:me, at:now, note, ...(wv ? { waivers:wv, ...(Object.keys(wv).length ? { waive:true } : {}) } : {}) });
       r.level++;
       r.status = r.level >= r.chain.length ? 'approved' : 'pending';
     } else if (modal.kind === 'decline') {
@@ -1025,13 +1090,14 @@ function confirmModal() {
   const lost = rs.filter(r => r.shared && !commitIR(r));
   if (lost.length) toast(`${lost.map(r => r.ref).join(', ')} was withdrawn by the vendor`, 'info');
   const n = rs.length, r0 = rs[0], kind = modal.kind;
+  const wn = n === 1 && r0.history[r0.history.length - 1].waivers ? Object.keys(r0.history[r0.history.length - 1].waivers).length : 0;
   const msg = {
-    approve: n > 1 ? `${n} requests approved` : r0.status === 'approved' ? `${r0.ref} approved` : `${r0.ref} approved · sent to ${P(currentApprover(r0)).name}`,
-    waive: r0.status === 'approved' ? `${r0.ref} approved · inspection waived, Ready to Dispatch` : `${r0.ref} approved with inspection waived · sent to ${P(currentApprover(r0)).name}`,
+    approve: n > 1 ? `${n} requests approved` : `${r0.ref} approved${wn ? ` · inspection waived for ${wn} item${wn > 1 ? 's' : ''}` : ''}${r0.status === 'approved' ? '' : ` · sent to ${P(currentApprover(r0)).name}`}`,
     decline: n > 1 ? `${n} requests declined` : `${r0.ref} declined`,
     hold: `${r0.ref} moved to Hold`, unhold: `${r0.ref} moved back to Pending`,
   }[modal.kind];
   if (modal.kind !== 'unhold') ui.open = null;
+  if (kind === 'approve' || kind === 'decline') ui.wd = null;
   ui.sel.clear();
   modal = null;
   save(); render();
@@ -1067,9 +1133,11 @@ function render() {
   const caret = keepFocus ? document.activeElement.selectionStart : 0;
   m.innerHTML = ui.page === 'home' ? renderHome() : (ui.page === 'team' || ui.page === 'mine') ? renderApprovals(ui.page) : renderOther();
   if (keepFocus) { const q = $('#q'); q.focus(); q.setSelectionRange(caret, caret); }
-  const dScroll = $('.d-body')?.scrollTop;
+  const dScroll = $('.d-body')?.scrollTop, lScroll = $('.d-left')?.scrollTop, dScrollY = $('.drawer')?.scrollTop;
   $('#layer').innerHTML = renderDrawer() + renderModal();
   if (dScroll && $('.d-body')) $('.d-body').scrollTop = dScroll;
+  if (lScroll && $('.d-left')) $('.d-left').scrollTop = lScroll;
+  if (dScrollY && $('.drawer')) $('.drawer').scrollTop = dScrollY;
   document.body.style.overflow = ui.open ? 'hidden' : '';
 }
 
@@ -1103,6 +1171,8 @@ document.addEventListener('click', e => {
   if (ps) { me = ps.dataset.persona; ui.pop = null; ui.sel.clear(); ui.open = null; save(); render(); toast(`Logged in as ${P(me).name}`, 'swap'); return; }
   const chip = t.closest('[data-chip]');
   if (chip) { const ta = $('#clarText'); ta.value = chip.dataset.chip + (chip.dataset.chip.endsWith('.') ? '' : '.'); ta.focus(); return; }
+  const wchip = t.closest('[data-wchip]');
+  if (wchip) { const r = findReq(ui.open); waiveDraft(r).lines[wchip.dataset.mc].reason = wchip.dataset.wchip; render(); return; }
   const mchip = t.closest('[data-mchip]');
   if (mchip) { $('#mNote').value = mchip.dataset.mchip; $('#fNote')?.classList.remove('invalid'); return; }
 
@@ -1118,7 +1188,7 @@ document.addEventListener('click', e => {
     case 'pop': ui.pop = ui.pop === a.dataset.pop ? null : a.dataset.pop; render(); break;
     case 'close-pop': ui.pop = null; render(); break;
     case 'switch': case 'profile': case 'bell': ui.pop = ui.pop === act ? null : act; render(); break;
-    case 'reset': REQS = seed(); me = 'rahul'; ui.pop = null; ui.open = null; ui.sel.clear(); save(); render(); toast('Demo data reset', 'refresh'); break;
+    case 'reset': REQS = seed(); me = 'rahul'; ui.pop = null; ui.open = null; ui.wd = null; ui.sel.clear(); save(); render(); toast('Demo data reset', 'refresh'); break;
     case 'clear-filters': ui.types.clear(); ui.q = ''; ui.pop = null; render(); break;
     case 'view': ui.view = ui.view === 'list' ? 'cards' : 'list'; render(); break;
     case 'sel-all': { const L = filtered(ui.page); const all = L.every(r => ui.sel.has(r.id)); L.forEach(r => all ? ui.sel.delete(r.id) : ui.sel.add(r.id)); render(); break; }
@@ -1128,8 +1198,16 @@ document.addEventListener('click', e => {
     case 'export': exportCsv(); break;
     case 'scroll': $('#paRow')?.scrollBy({ left: 300 * +a.dataset.dir }); break;
     case 'nav-open': document.body.classList.add('nav-open'); break;
-    case 'close': ui.open = null; render(); break;
-    case 'approve': case 'decline': case 'hold': case 'unhold': case 'waive': modal = { kind:act, ids:[r.id] }; render(); $('#mNote')?.focus(); break;
+    case 'close': ui.open = null; ui.wd = null; render(); break;
+    case 'approve': {
+      const miss = canEditWaivers(r) ? r.lines.filter(l => { const x = waiveDraft(r).lines[l.mc]; return x.off && !x.reason.trim(); }) : [];
+      if (miss.length) {
+        ui.wd.err = true; render();
+        $(`[data-wreason="${CSS.escape(miss[0].mc)}"]`)?.focus();
+        toast(`Add a waiver reason for ${miss.map(l => l.mc).join(', ')}`, 'info'); break;
+      }
+    } // falls through
+    case 'decline': case 'hold': case 'unhold': modal = { kind:act, ids:[r.id] }; render(); $('#mNote')?.focus(); break;
     case 'm-close': modal = null; render(); break;
     case 'm-close-bg': if (t === a) { modal = null; render(); } break;
     case 'm-confirm': confirmModal(); break;
@@ -1148,6 +1226,17 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { ui.q = e.target.value; render(); }
   if (e.target.id === 'mNote') $('#fNote')?.classList.remove('invalid');
+  const wr = e.target.dataset?.wreason;
+  if (wr != null) { waiveDraft(findReq(ui.open)).lines[wr].reason = e.target.value; if (e.target.value.trim()) e.target.closest('.field').classList.remove('invalid'); }
+});
+/* per-item inspection toggle — on = inspection required, off = waived (needs a reason) */
+document.addEventListener('change', e => {
+  const mc = e.target.dataset?.wline;
+  if (mc == null) return;
+  const x = waiveDraft(findReq(ui.open)).lines[mc];
+  x.off = !e.target.checked;
+  render();
+  if (x.off && !x.reason) $(`[data-wreason="${CSS.escape(mc)}"]`)?.focus();
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;

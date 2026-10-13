@@ -151,6 +151,29 @@
   .mc-id{background:none;border:none;padding:0;font-size:10px;font-weight:700;color:var(--green-600);text-decoration:underline;text-underline-offset:2px;display:inline-flex;align-items:center;gap:3px}
   .mc-id:hover{color:var(--green)}
   .ir-sub td{background:#F6F8F7!important;padding:4px 10px 10px 26px!important}
+  /* per-line tracking panel: MC / IR / Dispatch tabs that belong to the line item directly above */
+  .items tr.has-panel > td{border-bottom:none}
+  .items tr.lp-row > td{padding:0 12px 22px!important;text-align:left!important;border-left:none!important;border-top:none!important;border-bottom:3px solid #DADDE1;background:#fff}
+  .lp{border:1px solid var(--green-100);border-left:4px solid var(--green);border-radius:0 0 6px 6px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .lp-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 12px;background:var(--green-50);border-bottom:1px solid var(--green-100);font-size:10px}
+  .lp-title{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--green-600);display:inline-flex;align-items:center;gap:6px}
+  .lp-title .ln{background:var(--green);color:#fff;border-radius:3px;padding:1px 6px;font-size:9.5px;letter-spacing:.02em}
+  .lp-title .cd{color:var(--text);text-transform:none;letter-spacing:0;font-weight:600}
+  .lp-head .mc-meter{margin-left:auto}
+  .lp-tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--border);background:#fff}
+  .lp-tab{border:none;background:none;padding:9px 12px 8px;font-size:11px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+  .lp-tab:hover{color:var(--text)}
+  .lp-tab.on{color:var(--green-600);border-bottom-color:var(--green);font-weight:600}
+  .lp-tab .n{min-width:16px;height:16px;border-radius:8px;background:var(--row-alt);display:grid;place-items:center;font-size:9.5px;font-weight:700;padding:0 4px;color:var(--text)}
+  .lp-tab.on .n{background:var(--green);color:#fff}
+  .lp-tab .dot{width:6px;height:6px;border-radius:50%;background:#E0A21B}
+  .lp-body{padding:10px 12px 12px;overflow-x:auto}
+  .lp-body .mini{margin-top:0}
+  .lp-body .mc-hint{margin:0 0 8px}
+  .lp-empty{padding:12px 2px;font-size:10.5px;color:var(--faint)}
+  .reopen{font-size:9px;color:var(--green-600);margin-top:3px;white-space:nowrap}
+  .btn-xs{height:22px;padding:0 8px;font-size:10px;white-space:nowrap}
+  .lp-body td.nw{white-space:nowrap}
   .ir-sub .mini{margin-top:4px}
   .ir-sub .mini th{background:#ECEFED}
   .st-IRP{background:var(--amber-bg);color:var(--amber)}
@@ -450,29 +473,47 @@ function vendorKeyFor(v) {
   }
   return key;
 }
+/* POs the buyer sends for acknowledgement (bajel.po.v1) — the vendor's acknowledgement goes back through bajel.poack.v1,
+   and the Buyer Portal moves the PO on from Vendor Acknowledgement Pending as soon as it sees it */
+const PO_STORE = 'bajel.po.v1', PO_ACK_STORE = 'bajel.poack.v1';
+const SENT_PO = ['ACK','GRN','INVOICE','CLOSED','CANCELLED'];
+const readAcks = () => { try { return JSON.parse(localStorage.getItem(PO_ACK_STORE))?.acks || {}; } catch (e) { return {}; } };
+function writeAck(o) {
+  const acks = readAcks();
+  acks[o.no] = { at: new Date().toISOString(), by: VENDORS[o.vendor].name };
+  try { localStorage.setItem(PO_ACK_STORE, JSON.stringify({ acks })); } catch (e) {}
+}
+// buyer status → vendor status
+function vendorStatus(meta, prev) {
+  if (meta.status === 'CLOSED' || meta.status === 'CANCELLED') return meta.status;
+  if (meta.status === 'ACK') return readAcks()[meta.number] ? 'OPEN' : 'ACK';
+  return prev?.status === 'INV' ? 'INV' : 'OPEN';
+}
 function buildBuyerPO(meta, prev) {
   const offKey = 'B:' + meta.office.name;
   OFFICES[offKey] = { name: meta.office.name, addr: meta.office.address || meta.office.name, gstin: meta.office.gstin || '—' };
   const open = new Map((prev?.lines || []).map(l => [l.ref, l.mcOpen]));
   return { id: 700000 + meta.id, vendor: vendorKeyFor(meta.vendor), no: meta.number, fromBuyer: true,
-    status: meta.status === 'CLOSED' ? 'CLOSED' : meta.status === 'CANCELLED' ? 'CANCELLED' : prev?.status || 'OPEN',
+    status: vendorStatus(meta, prev),
     date: isoDay(meta.created), office: offKey, deliveryDate: isoDay(meta.endDate), lineDate: isoDay(meta.endDate), title: meta.title || 'NA',
     lines: meta.lines.map(l => L(l.code, l.ref, l.desc, l.productCode, l.qty, l.price,
       { hsn: l.hsn, unit: l.unit, gst: l.gst, delivered: l.delivered, invoiced: l.invoiced, mcOpen: open.get(l.ref) ?? true })),
     grns: [], condGrns: [], invoices: [], amendments: [] };
 }
 function loadBuyerMcs() {
-  let saved = null;
+  let saved = null, sent = null;
   try { saved = JSON.parse(localStorage.getItem(MC_STORE)); } catch (e) {}
-  if (!saved?.pos) return;
-  const meta = saved.meta || {};
-  // add / refresh POs published by the buyer; drop ones that no longer have any clearance
+  try { sent = JSON.parse(localStorage.getItem(PO_STORE)); } catch (e) {}
+  const meta = { ...(saved?.meta || {}) };
+  Object.values(sent?.pos || {}).forEach(m => { if (SENT_PO.includes(m.status)) meta[m.number] = m; });
+  // add / refresh POs published by the buyer; drop ones that are no longer shared
   for (let i = ORDERS.length - 1; i >= 0; i--) if (ORDERS[i].fromBuyer && !meta[ORDERS[i].no]) ORDERS.splice(i, 1);
   Object.values(meta).forEach(m => {
     const at = ORDERS.findIndex(o => o.no === m.number);
     if (at < 0) ORDERS.push(buildBuyerPO(m));
     else if (ORDERS[at].fromBuyer) ORDERS[at] = buildBuyerPO(m, ORDERS[at]);
   });
+  if (!saved?.pos) return;
   ORDERS.forEach(o => {
     const byRef = saved.pos[o.no];
     if (!byRef) return;
@@ -489,12 +530,18 @@ function loadBuyerMcs() {
 }
 const allMcIds = () => new Map(ORDERS.flatMap(o => o.lines.flatMap(l => l.mcs.map(m => [m.id, o]))));
 loadBuyerMcs();
+const ackNos = () => new Set(ORDERS.filter(o => o.status === 'ACK').map(o => o.no));
 window.addEventListener('storage', e => {
-  if (e.key !== MC_STORE) return;
-  const before = allMcIds();
+  if (e.key !== MC_STORE && e.key !== PO_STORE) return;
+  const before = allMcIds(), ackBefore = ackNos();
   loadBuyerMcs();
   const fresh = [...allMcIds()].filter(([id]) => !before.has(id));
   const y = scrollY; route(); scrollTo(0, y);
+  const newAck = ORDERS.filter(o => o.status === 'ACK' && !ackBefore.has(o.no));
+  if (newAck.length) {
+    const o = newAck[0];
+    toast(`PO ${o.no} received from Hindalco — acknowledgement pending` + (o.vendor === vendorKey ? '' : ` for ${VENDORS[o.vendor].name} — switch account to view`));
+  }
   if (fresh.length) {
     const [id, o] = fresh[0], v = VENDORS[o.vendor];
     toast(`${fresh.length > 1 ? `${fresh.length} new Manufacturing Clearances` : `${id} released`} on PO ${o.no}` +
@@ -673,13 +720,13 @@ function detailView(o) {
       <div style="overflow-x:auto"><table class="items">
         <thead><tr><th>Item Details</th><th>Unit Price</th><th>PO Qty</th><th>Delivered Qty</th><th>Invoice Qty</th>
           <th>Balance GRN Quantity</th><th>Base Amount</th><th>Tax Amount</th><th>Item Total Amount</th><th>Delivery Date</th></tr></thead>
-        <tbody>${o.lines.map((l, i) => `<tr>
+        <tbody>${o.lines.map((l, i) => `<tr class="has-panel">
           <td><div class="code">${l.code}</div><div class="desc">${esc(l.desc)}</div>
             <div class="notes">Notes:<br>Delivery Add: ${esc(off.addr)}<br>Delivery Date: ${fmtD(o.lineDate)}<br>HSN : ${l.hsn}<br>${l.unit ? `UOM : ${l.unit}<br>` : ''}
             Product Code: ${l.productCode}<br>Item Ref No : ${l.ref}</div></td>
           <td>${fmtN(l.price)}</td><td>${fmtN(l.qty)}</td><td>${fmtN(l.delivered)}</td><td>${fmtN(l.invoiced)}</td>
           <td>${fmtN(balGrn(l))}</td><td>${fmtN(lineBase(l))}</td><td>${fmtN(lineTax(l))}</td><td>${fmtN(lineTotal(l))}</td>
-          <td>${fmtD(o.lineDate)}</td></tr>${l.mcs.length ? mcRow(o, l, i) : ''}`).join('')}</tbody>
+          <td>${fmtD(o.lineDate)}</td></tr>${mcRow(o, l, i)}`).join('')}</tbody>
       </table></div>
       <div class="totals"><span class="muted">Base Amount: <b>INR ${fmtN(poBase(o))}</b></span><span class="muted">Tax: <b>INR ${fmtN(poTax(o))}</b></span>
         <span>PO Total: <b>INR ${fmtN(poTotal(o))}</b></span></div>
@@ -782,20 +829,28 @@ function apprNote(r) {
 }
 
 /* A merged IR is stored as one record per MC item: same id, item n of N, key "IR-…#n" */
-function irTable(irs) {
+function irTable(irs, o = null, withMc = false) {
   const all = readIRs();
-  return `<table class="mini"><thead><tr><th>Inspection Request</th><th>Inspection Qty</th><th>Proposed Inspection Date</th><th>Raised On</th>
+  return `<table class="mini"><thead><tr><th>Inspection Request</th>${withMc ? '<th>MC ID</th>' : ''}<th>Inspection Qty</th><th>Proposed Inspection Date</th><th>Raised On</th>
     <th>Accepted Qty</th><th>Rejected Qty</th><th>Status</th><th>Dispatch Request</th><th>Action</th></tr></thead>
     <tbody>${irs.map(r => {
       const dr = drOfIr(r);
       const others = r.items > 1 ? all.filter(x => x.po === r.po && x.id === r.id && x.mcId !== r.mcId).map(x => x.mcId) : [];
       return `<tr class="${isClosedIr(r) ? 'wd' : ''}"><td><button class="mc-id" data-ir-open="${r.id}" title="View Inspection Request ${r.id}">${r.id} ${icon('chevR', 9, 2.6)}</button>${others.length ? `<div class="merge-note" style="white-space:normal;max-width:200px">Item ${r.item} of ${r.items} · merged with ${others.join(', ')}</div>` : ''}</td>
-      <td>${fmtN(r.qty)}</td><td>${fmtD(parseISO(r.inspDate))}</td><td>${fmtDT(new Date(r.createdAt))}</td>
+      ${withMc ? `<td class="nw">${esc(r.mcId)}</td>` : ''}<td>${fmtN(r.qty)}</td><td>${fmtD(parseISO(r.inspDate))}</td><td>${fmtDT(new Date(r.createdAt))}</td>
       <td>${!isRecorded(r) ? '<span class="faint">—</span>' : `<b style="color:var(--green-600)">${fmtN(r.accepted)}</b>`}</td>
-      <td>${!isRecorded(r) ? '<span class="faint">—</span>' : `<b style="color:${r.rejected ? 'var(--red)' : 'inherit'}">${fmtN(r.rejected)}</b>`}</td>
+      <td>${!isRecorded(r) ? '<span class="faint">—</span>' : `<b style="color:${r.rejected ? 'var(--red)' : 'inherit'}">${fmtN(r.rejected)}</b>${r.rejected > 0 ? '<div class="reopen">↺ reopened for inspection</div>' : ''}`}</td>
       <td>${irChip(r.status)}${apprNote(r)}${r.inspRemarks ? `<div class="faint" style="margin-top:3px;white-space:normal;max-width:200px">${esc(r.inspRemarks)}</div>` : ''}</td>
       <td>${dr ? `<button class="mc-id" data-dr="${dr.id}">${dr.id}</button> ${drChip(dr.status)}` : '<span class="faint">—</span>'}</td>
-      <td>${irWithdrawable(r.po, r.id) ? `<button class="btn-del" data-ir-wd="${r.id}" title="Withdraw ${r.id}">${icon('back', 9, 2.4)} Withdraw</button>` : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table>`;
+      <td>${irWithdrawable(r.po, r.id) ? `<button class="btn-del" data-ir-wd="${r.id}" title="Withdraw ${r.id}">${icon('back', 9, 2.4)} Withdraw</button>`
+        : reinspectable(o, r) ? `<button class="btn btn-primary btn-xs" data-ir-redo="${r.mcId}" data-ir-redo-qty="${r.rejected}" title="Raise a new Inspection Request for the rejected quantity">${icon('plus', 9, 2.6)} Re-inspect</button>`
+        : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table>`;
+}
+/* rejected qty goes back into the clearance's available qty, so it can be offered for inspection again */
+function reinspectable(o, r) {
+  if (!o || !isRecorded(r) || !(r.rejected > 0)) return false;
+  const f = findMc(o, r.mcId);
+  return !!f && mcAvail(o, f.m) > 0;
 }
 
 /* ---------- Withdrawing an Inspection Request ----------
@@ -1054,34 +1109,62 @@ function selBar(o) {
 
 /* Manufacturing Clearance released by the buyer — vendor selects one or more to raise an Inspection Request.
    A clearance withdrawn by Hindalco stays listed (greyed out) and can't be selected. */
+const LINE_TABS = [['mc', 'Manufacturing Clearance'], ['ir', 'Inspection Requests'], ['dr', 'Dispatch Instructions']];
 function mcRow(o, l, i) {
   syncSel(o);
   const alloc = mcAlloc(l), pct = Math.min(100, alloc / l.qty * 100);
   const avail = l.mcs.filter(m => mcAvail(o, m) > 0);
   const allOn = avail.length > 0 && avail.every(m => ui.irSel.has(m.id));
-  const wd = l.mcs.length - liveMcs(l).length;
-  return `<tr class="mc-row"><td colspan="10">
-    <button class="mc-toggle" data-mc="${i}">${icon('truck', 11, 2)} MANUFACTURING CLEARANCE (${liveMcs(l).length}) ${icon(l.mcOpen ? 'up' : 'eye', 10, 2.2)}</button>
-    <span class="mc-meter"><span style="width:${pct}%"></span></span>
-    <span class="muted">${fmtN(alloc)} of ${fmtN(l.qty)} cleared for dispatch${alloc < l.qty ? ` · <b>${fmtN(r2(l.qty - alloc))} awaiting clearance</b>` : ''}${wd ? ` · ${wd} withdrawn` : ''}</span>
-    ${l.mcOpen ? `<div class="mc-hint">Clearances marked “Not required” need no inspection — Hindalco sends the Dispatch Request directly. Tick one or more other clearances — across any line items of this PO — to merge them into one Inspection Request. Click an MC ID for its details.</div>
+  const wd = l.mcs.length - liveMcs(l).length, tab = l.tab || 'mc';
+  const irs = l.mcs.flatMap(m => irsOf(o, m)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const ids = new Set(l.mcs.map(m => m.id));
+  const drs = drsOf(o).filter(d => d.items.some(x => ids.has(x.mcId)));
+  const count = { mc: liveMcs(l).length, ir: irs.length, dr: drs.length };
+  const attn = { mc: avail.length > 0, ir: irs.some(r => reinspectable(o, r)), dr: drs.some(d => !d.invoice) };
+  let body;
+  if (tab === 'mc') body = l.mcs.length ? `<div class="mc-hint">Clearances marked “Not required” need no inspection — Hindalco sends the Dispatch Request directly. Tick one or more other clearances — across any line items of this PO — to merge them into one Inspection Request. Click an MC ID for its details.</div>
       <table class="mini"><thead><tr><th style="width:26px"><input type="checkbox" class="mc-cb" data-irsel-line="${i}" ${allOn ? 'checked' : ''} ${avail.length ? '' : 'disabled'} aria-label="Select all clearances of ${l.code}"></th>
         <th>MC ID</th><th>Cleared Qty</th><th>Shipping Location</th><th>Shipping Address</th><th>Earliest Delivery Date</th><th>Released On</th><th>Inspection</th><th>Status</th></tr></thead>
       <tbody>${l.mcs.map((m, k) => {
-        const irs = irsOf(o, m), s = irSummary(m, irs), on = ui.irSel.has(m.id), w = isWithdrawnMc(m), direct = !irReq(m), dr = direct ? drOfMc(o, m.id) : null;
+        const mirs = irsOf(o, m), s = irSummary(m, mirs), on = ui.irSel.has(m.id), w = isWithdrawnMc(m), direct = !irReq(m), dr = direct ? drOfMc(o, m.id) : null;
         return `<tr class="${on ? 'sel' : ''} ${w ? 'wd' : ''}"><td><input type="checkbox" class="mc-cb" data-irsel="${m.id}" ${on ? 'checked' : ''}
             ${s.available > 0 ? '' : `disabled title="${w ? 'Withdrawn by Hindalco' : direct ? 'Inspection not required' : 'The full cleared quantity is accepted or under inspection'}"`} aria-label="Select ${m.id}"></td>
         <td><button class="mc-id" data-mcopen="${i}:${k}" title="View clearance">${m.id} ${icon('chevR', 9, 2.6)}</button></td>
         <td>${fmtN(m.qty)}${l.unit ? ` <span class="faint">${l.unit}</span>` : ''}</td><td>${esc(mcLoc(m).name)}</td>
         <td class="muted" style="max-width:240px;white-space:normal">${esc(mcLoc(m).addr)}</td><td>${fmtD(m.date)}</td>
         <td>${m.createdAt ? fmtDT(m.createdAt) : '-'}</td>
-        <td style="white-space:normal">${direct ? '<span class="chip st-IRW">Not required</span>' : irs.length ? `<b>${irs.length}</b> request${irs.length > 1 ? 's' : ''}<div class="faint">${fmtN(s.accepted)} accepted${s.pending ? ` · ${fmtN(s.pending)} under inspection` : ''}${s.available > 0 ? ` · ${fmtN(s.available)} available` : ''}</div>`
+        <td style="white-space:normal">${direct ? '<span class="chip st-IRW">Not required</span>' : mirs.length ? `<button class="mc-id" data-ltab="${i}:ir">${mirs.length} request${mirs.length > 1 ? 's' : ''}</button><div class="faint">${fmtN(s.accepted)} accepted${s.pending ? ` · ${fmtN(s.pending)} under inspection` : ''}${s.available > 0 ? ` · ${fmtN(s.available)} available` : ''}</div>`
           : '<span class="faint">Not requested</span>'}</td>
         <td>${w ? `<span class="chip st-IRW">Withdrawn</span><div class="appr-note">${m.withdrawnAt ? fmtD(m.withdrawnAt) : ''}${m.withdrawReason ? ` · “${esc(m.withdrawReason)}”` : ''}</div>`
           : direct ? `${irChip(mcDirectStage(o, m))}${dr ? `<div class="appr-note"><button class="mc-id" data-dr="${dr.id}">${dr.id}</button></div>` : ''}`
-          : `<span class="chip st-OPEN">${m.status}</span>`}</td></tr>
-        ${irs.length ? `<tr class="ir-sub"><td colspan="9">${irTable(irs)}</td></tr>` : ''}`;
-      }).join('')}</tbody></table>` : ''}
+          : `<span class="chip st-OPEN">${m.status}</span>`}</td></tr>`;
+      }).join('')}</tbody></table>`
+    : `<div class="lp-empty">Hindalco has not released a Manufacturing Clearance for this line item yet. Don't dispatch until one is released.</div>`;
+  else if (tab === 'ir') body = irs.length ? irTable(irs, o, true)
+    : `<div class="lp-empty">${l.mcs.length ? 'No Inspection Request raised on this line item yet. Tick a clearance in the Manufacturing Clearance tab to raise one.' : 'An Inspection Request can be raised once Hindalco releases a Manufacturing Clearance.'}</div>`;
+  else body = drs.length ? `<table class="mini"><thead><tr><th>Dispatch Request</th><th>Inspection Request</th><th>MC ID</th><th>Dispatch Qty (this line)</th>
+      <th>Ship To</th><th>Dispatch By</th><th>Status</th><th>Invoice</th></tr></thead>
+      <tbody>${drs.map(d => { const mine = d.items.filter(x => ids.has(x.mcId)); return `<tr>
+        <td><button class="mc-id" data-dr="${d.id}">${d.id} ${icon('chevR', 9, 2.6)}</button><div class="faint">${fmtDT(new Date(d.createdAt))}</div></td>
+        <td>${d.irId ? `<button class="mc-id" data-ir-open="${d.irId}">${d.irId}</button>` : '<span class="faint">Not required</span>'}</td>
+        <td class="nw">${mine.map(x => esc(x.mcId)).join('<br>')}</td>
+        <td><b>${mine.map(x => `${fmtN(x.qty)} ${x.unit || ''}`).join('<br>')}</b></td>
+        <td style="white-space:normal">${[...new Set(mine.map(x => x.shipTo))].map(esc).join('<br>')}</td>
+        <td>${d.dispatchBy ? fmtD(parseISO(d.dispatchBy)) : '-'}</td><td>${drChip(d.status)}</td>
+        <td>${d.invoice ? `<b>${esc(d.invoice.no)}</b>` : `<button class="btn btn-primary btn-xs" data-inv-new="${d.id}">Submit Invoice</button>`}</td></tr>`; }).join('')}</tbody></table>`
+    : `<div class="lp-empty">No Dispatch Instruction from Hindalco for this line item yet. It arrives once inspected quantity is accepted, or directly for clearances that need no inspection.</div>`;
+  return `<tr class="lp-row"><td colspan="10">
+    <div class="lp" aria-label="Tracking for line ${i + 1} · ${l.code}">
+      <div class="lp-head">
+        <span class="lp-title"><span class="ln">Line ${i + 1}</span><span class="cd">${l.code}</span> · Clearance &amp; Dispatch Tracking</span>
+        ${wd ? `<span class="chip st-IRW">${wd} withdrawn</span>` : ''}
+        <span class="mc-meter"><span style="width:${pct}%"></span></span>
+        <span class="muted">${fmtN(alloc)} of ${fmtN(l.qty)} cleared for dispatch${alloc < l.qty ? ` · <b>${fmtN(r2(l.qty - alloc))} awaiting clearance</b>` : ''}</span>
+      </div>
+      <div class="lp-tabs" role="tablist">${LINE_TABS.map(([k, lb]) => `<button class="lp-tab ${tab === k ? 'on' : ''}" role="tab" aria-selected="${tab === k}"
+        data-ltab="${i}:${k}">${lb} <span class="n">${count[k]}</span>${attn[k] ? '<span class="dot" title="Action available"></span>' : ''}</button>`).join('')}</div>
+      <div class="lp-body" role="tabpanel">${body}</div>
+    </div>
   </td></tr>`;
 }
 
@@ -1111,7 +1194,7 @@ function mcModal(o, i, k) {
     ${!irReq(m) ? `<div class="sub-h">Dispatch</div><div style="padding:4px 0 2px;font-size:11px">Inspection is <b>not required</b> for this clearance. Status: ${irChip(mcDirectStage(o, m))}
       ${drOfMc(o, m.id) ? ` · <button class="mc-id" data-dr="${drOfMc(o, m.id).id}">${drOfMc(o, m.id).id}</button>` : ' · awaiting Dispatch Request from Hindalco'}</div>`
     : `<div class="sub-h">Inspection Requests</div>
-    ${irs.length ? irTable(irs) : '<div class="faint" style="padding:6px 0 2px">No Inspection Request raised against this clearance yet.</div>'}`}`,
+    ${irs.length ? irTable(irs, o) : '<div class="faint" style="padding:6px 0 2px">No Inspection Request raised against this clearance yet.</div>'}`}`,
     `<button class="btn btn-ghost" data-close-btn>Close</button>
      ${!irReq(m) ? '' : `<button class="btn btn-primary" data-ir-new="${m.id}" ${s.available > 0 ? '' : `disabled title="${w ? 'Withdrawn by Hindalco' : 'The full cleared quantity is accepted or under inspection'}"`}>${icon('plus', 11, 2.6)} Create Inspection Request${others ? ` (+${others} selected)` : ''}</button>`}`, true);
 }
@@ -1388,7 +1471,12 @@ document.addEventListener('click', e => {
   if (d.status) { ui.status = ui.status === d.status ? null : d.status; route(); return; }
   if (d.sort) { ui.sort = [d.sort, ui.sort[0] === d.sort ? -ui.sort[1] : 1]; route(); return; }
   if (d.goto) { document.getElementById(d.goto)?.scrollIntoView({ behavior:'smooth', block:'start' }); return; }
-  if (d.mc && cur) { const l = cur.lines[+d.mc]; l.mcOpen = !l.mcOpen; const y = scrollY; route(); scrollTo(0, y); return; }
+  if (d.mc && cur) { cur.lines[+d.mc].tab = 'mc'; rerender(); return; }
+  if (d.ltab && cur) { const [i, k] = d.ltab.split(':'); cur.lines[+i].tab = k; rerender(); return; }
+  if (d.irRedo && cur) {   // re-inspect: new IR on the clearance, pre-filled with the rejected qty
+    closeModal(); irMergeModal(cur, [d.irRedo]);
+    if (irDraft) { irDraft.qty[d.irRedo] = Math.min(+d.irRedoQty, mcAvail(cur, findMc(cur, d.irRedo).m)); drawIrItems(cur); }
+    return; }
   if (d.grn && cur) { grnModal(cur, cur.grns[+d.grn]); return; }
   if (d.dr) { drModal(d.dr); return; }
   if (d.invNew) { invoiceForm(d.invNew); return; }
@@ -1418,7 +1506,7 @@ document.addEventListener('click', e => {
       `<button class="btn btn-ghost" data-close-btn>Cancel</button><button class="btn btn-primary" data-ack-ok="${o.id}">Acknowledge</button>`);
     return;
   }
-  if (d.ackOk) { const o = byId(d.ackOk); o.status = 'OPEN'; closeModal(); route(); toast(`PO ${o.no} acknowledged`); return; }
+  if (d.ackOk) { const o = byId(d.ackOk); o.status = 'OPEN'; writeAck(o); closeModal(); route(); toast(`PO ${o.no} acknowledged — Hindalco notified`); return; }
 });
 document.addEventListener('input', e => {
   if (e.target.dataset?.irq && irDraft) { irDraft.qty[e.target.dataset.irq] = e.target.value; return; }
