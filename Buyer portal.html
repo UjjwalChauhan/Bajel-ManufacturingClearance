@@ -254,11 +254,12 @@
   .lp-body{padding:10px 12px 12px;overflow-x:auto}
   .lp-body .mc-table{margin-top:0;max-width:none}
   .lp-empty{padding:12px 2px;font-size:10.5px;color:var(--faint)}
-  .lines-view{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0 0 10px;font-size:10.5px}
-  .lines-view .lv-lbl{color:var(--muted);font-weight:500}
-  .lv-opt{display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:#44444C}
-  .lv-opt input{margin:0;accent-color:var(--primary);cursor:pointer}
-  .lv-opt.on{color:var(--primary-600);font-weight:600}
+  .lines-subbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px;font-size:10px;color:var(--muted)}
+  .sub-tab{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;border:1px solid var(--border);border-radius:12px;background:#fff;
+    font-size:9.5px;font-weight:600;color:#44444C;letter-spacing:.02em;cursor:pointer}
+  .sub-tab:hover{border-color:var(--primary);color:var(--primary-600)}
+  .sub-tab.on{border-color:var(--primary);background:var(--primary-50);color:var(--primary-600)}
+  .sub-tab svg{flex:none}
   .reopen{font-size:9px;color:var(--primary-600);margin-top:3px;white-space:nowrap}
   .lp-body td.nw{white-space:nowrap}
   .irg-table td{vertical-align:middle}
@@ -2309,12 +2310,13 @@ function irRows(po, l, irs, withMc = false) {
 }
 /* tracking panel under each line item: Manufacturing Clearance · Inspection Requests · Dispatch Instructions */
 const LINE_TABS = [['mc', 'Manufacturing Clearance'], ['ir', 'Inspection Requests'], ['dr', 'Dispatch Instructions']];
-/* PO-level switch above the line items: show the same tab on every line. No option is checked while lines show different tabs. */
+/* PO-level bar above the line items: open the same tab on every line, or collapse every line's panel */
+const LINE_TAB_ICONS = { mc: 'box', ir: 'check', dr: 'truck' };
 function linesViewBar(po) {
-  const cur = po.lines.every(l => (l.tab || 'mc') === (po.lines[0]?.tab || 'mc')) ? po.lines[0]?.tab || 'mc' : null;
-  return `<div class="lines-view" role="radiogroup" aria-label="View on all line items"><span class="lv-lbl">View on all line items:</span>
-    ${LINE_TABS.map(([k, lb]) => `<label class="lv-opt ${cur === k ? 'on' : ''}" data-action="lines-tab" data-tab="${k}">
-      <input type="radio" name="linesView" value="${k}" ${cur === k ? 'checked' : ''}> ${lb}</label>`).join('')}</div>`;
+  const all = k => po.lines.length && po.lines.every(l => (l.tab || 'mc') === k);
+  return `<div class="lines-subbar" role="group" aria-label="Show for all line items"><span>Show for all line items:</span>
+    ${LINE_TABS.map(([k, lb]) => `<button class="sub-tab ${all(k) ? 'on' : ''}" aria-pressed="${all(k)}" data-action="lines-tab" data-tab="${k}">${icon(LINE_TAB_ICONS[k], 10, 2)} ${lb}</button>`).join('')}
+    ${po.lines.some(l => (l.tab || 'mc') !== 'none') ? `<button class="sub-tab" data-action="lines-tab" data-tab="none">${icon('chevUp', 10, 2)} Collapse all</button>` : ''}</div>`;
 }
 function mcRow(po, l, i) {
   const alloc = mcAllocated(l), pct = Math.min(100, l.qty ? alloc / l.qty * 100 : 0);
@@ -2322,7 +2324,7 @@ function mcRow(po, l, i) {
   const ids = new Set(l.mcs.map(m => m.id));
   const drs = drsOfPo(po).filter(d => d.items.some(x => ids.has(x.mcId)));
   const pend = irs.filter(r => !isRecorded(r) && !isClosedIr(r)).length;
-  const live = liveMcs(l).length, wd = l.mcs.length - live, tab = l.tab || 'mc';
+  const live = liveMcs(l).length, wd = l.mcs.length - live, tab = l.tab || 'mc';   // 'none' = collapsed: tabs only
   const count = { mc: live, ir: irs.length, dr: drs.length }, attn = { ir: pend > 0, dr: drs.some(d => !d.invoice) };
   let body;
   if (tab === 'mc') body = l.mcs.length ? `<table class="mini-table mc-table"><thead><tr><th>MC ID</th><th>Quantity</th><th>Shipping Location</th>
@@ -2368,7 +2370,7 @@ function mcRow(po, l, i) {
       </div>
       <div class="lp-tabs" role="tablist">${LINE_TABS.map(([k, lb]) => `<button class="lp-tab ${tab === k ? 'on' : ''}" role="tab" aria-selected="${tab === k}"
         data-action="line-tab" data-i="${i}" data-tab="${k}">${lb} <span class="n">${count[k]}</span>${attn[k] ? '<span class="dot" title="Needs attention"></span>' : ''}</button>`).join('')}</div>
-      <div class="lp-body" role="tabpanel">${body}</div>
+      ${tab === 'none' ? '' : `<div class="lp-body" role="tabpanel">${body}</div>`}
     </div>
   </td></tr>`;
 }
@@ -2999,7 +3001,7 @@ const MC_ACTIONS = {
   'irg-open': el => openIrGroup(currentPO(), el.dataset.irg),
   'ir-filter': el => { ui.irFilter = el.dataset.st; rerenderPO(); },
   'mc-toggle': el => { currentPO().lines[+el.dataset.i].tab = 'mc'; rerenderPO(); },
-  'line-tab': el => { currentPO().lines[+el.dataset.i].tab = el.dataset.tab; rerenderPO(); },
+  'line-tab': el => { const l = currentPO().lines[+el.dataset.i]; l.tab = (l.tab || 'mc') === el.dataset.tab ? 'none' : el.dataset.tab; rerenderPO(); },
   'lines-tab': el => { currentPO().lines.forEach(l => { l.tab = el.dataset.tab; }); rerenderPO(); },
   'mc-wd': el => {
     const po = currentPO(), l = po.lines[+el.dataset.i], m = l.mcs[+el.dataset.k];
