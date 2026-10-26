@@ -263,6 +263,11 @@
   .st-DRP{background:var(--amber-bg);color:var(--amber)}
   /* Dispatch Instructions page */
   .di-list td{vertical-align:top}
+  .di-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  .di-head h1{margin-right:auto}
+  .di-head-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .di-sel-txt{font-size:10.5px;color:var(--muted)}
+  .di-sel-txt b{color:var(--text)}
   .di-list .di-cb{width:24px;padding-right:0}
   .di-tog{border:none;background:none;padding:2px;margin-right:4px;color:var(--muted);vertical-align:middle;display:inline-grid;place-items:center}
   .di-tog svg{transition:transform .15s}
@@ -1428,10 +1433,8 @@ function dispatchListView() {
       <td><b>${unitTotals(d.items, x => x.qty)}</b></td>
       <td class="right">INR ${fmtN(drAmount(d))}</td>
       <td>${fmtD(parseISO(d.dispatchBy))}</td>
-      <td>${drChip(d.status)}</td>
-      <td>${free.length ? `<button class="btn btn-primary btn-xs" data-inv-new="${d.id}">${icon('plus', 9, 2.6)} Submit Invoice</button>`
-        : `<button class="link" data-dr="${d.id}">View Invoice</button>`}</td></tr>
-    ${open ? `<tr class="di-items"><td></td><td colspan="9"><table class="mini merge"><thead><tr><th></th><th>MC ID</th><th>Line Item</th><th>HSN</th><th>Qty</th>
+      <td>${drChip(d.status)}${d.invList || d.invoice ? `<div class="faint" style="margin-top:3px">${esc((d.invList || [d.invoice]).map(v => v.no).join(', '))}</div>` : ''}</td></tr>
+    ${open ? `<tr class="di-items"><td></td><td colspan="8"><table class="mini merge"><thead><tr><th></th><th>MC ID</th><th>Line Item</th><th>HSN</th><th>Qty</th>
         <th>Unit Price</th><th>GST %</th><th>Value incl. GST</th><th>Ship To</th><th>Invoice</th></tr></thead>
       <tbody>${d.items.map((x, i) => { const inv = itemInv(d, i), on = ui.diSel.has(selKey(d, i)); return `<tr class="${on ? 'sel' : inv ? 'wd' : ''}">
         <td><input type="checkbox" class="mc-cb" data-di-item="${selKey(d, i)}" ${on ? 'checked' : ''} ${inv ? 'disabled' : ''} aria-label="Select ${esc(x.mcId)}"></td>
@@ -1441,7 +1444,14 @@ function dispatchListView() {
         <td>${inv ? `<b>${esc(inv)}</b>` : '<span class="faint">Not invoiced</span>'}</td></tr>`; }).join('')}</tbody></table></td></tr>` : ''}`;
   };
   const nDi = new Set(sel.map(s => s.d.id)).size;
-  return `<div class="crumb">Procurement / Dispatch Instructions</div><h1>Dispatch Instructions</h1>
+  const selAmt = r2(sel.reduce((a, s) => a + itemVal(s.x), 0));
+  return `<div class="crumb">Procurement / Dispatch Instructions</div>
+    <div class="di-head"><h1>Dispatch Instructions</h1>
+      <div class="di-head-act">
+        <span class="di-sel-txt">${sel.length ? `<b>${sel.length}</b> item${sel.length > 1 ? 's' : ''} from <b>${nDi}</b> DI${nDi > 1 ? 's' : ''} · PO ${sel[0].d.po} · INR ${fmtN(selAmt)}` : 'Select items to invoice'}</span>
+        ${sel.length ? '<button class="btn btn-ghost" data-di-clear>Clear</button>' : ''}
+        <button class="btn btn-primary" data-inv-sel ${sel.length ? '' : 'disabled title="Select one or more items first"'}>${icon('plus', 10, 2.6)} Submit Invoice</button>
+      </div></div>
     <div class="tabs">${tab('pending', 'Invoice Pending', pend.length)}${tab('submitted', 'Invoice Submitted', done.length)}${tab('all', 'All', all.length)}</div>
     <div class="count">${rows.length} Dispatch Instruction${rows.length === 1 ? '' : 's'}</div>
     <div class="mc-hint" style="margin:0 0 12px">Expand a Dispatch Instruction to see its items. Tick items from one or more Dispatch Instructions of the same PO and submit them together on one invoice.</div>
@@ -1449,14 +1459,11 @@ function dispatchListView() {
     <input class="search" id="diQ" placeholder="Search Dispatch Instructions" value="${esc(ui.diQ)}">
     <div class="table-wrap"><table class="list dr-table di-list">
       <thead><tr><th></th><th>Dispatch Instruction</th><th>PO Number</th><th>Inspection Request / MC</th><th>Items</th><th>Dispatch Qty</th>
-        <th class="right">Value incl. GST</th><th>Dispatch By</th><th>Status</th><th>Action</th></tr></thead>
+        <th class="right">Value incl. GST</th><th>Dispatch By</th><th>Status</th></tr></thead>
       <tbody>${rows.length ? rows.map(row).join('')
-      : `<tr><td colspan="10" class="empty">${all.length ? 'No Dispatch Instructions match.' : 'No Dispatch Instructions yet. Hindalco releases one once material is inspected, or straight away for clearances that need no inspection.'}</td></tr>`}</tbody>
+      : `<tr><td colspan="9" class="empty">${all.length ? 'No Dispatch Instructions match.' : 'No Dispatch Instructions yet. Hindalco releases one once material is inspected, or straight away for clearances that need no inspection.'}</td></tr>`}</tbody>
     </table></div>
-    ${sel.length ? `<div class="sel-bar" role="region" aria-label="Selected items">
-      <span><b>${sel.length}</b> item${sel.length > 1 ? 's' : ''} from <b>${nDi}</b> Dispatch Instruction${nDi > 1 ? 's' : ''} · PO ${sel[0].d.po} · INR ${fmtN(r2(sel.reduce((a, s) => a + itemVal(s.x), 0)))}</span>
-      <button class="btn btn-ghost" data-di-clear>Clear</button>
-      <button class="btn btn-primary" data-inv-sel>${icon('plus', 10, 2.6)} Submit Invoice</button></div>` : ''}`;
+`;
 }
 /* tick / untick DI items; one invoice bills one PO, so items of another PO are refused while a selection exists */
 function diSelect(keys, on) {
@@ -1518,7 +1525,7 @@ function openInvoicePanel(keys) {
   const o = items[0].d.order;
   invDraft = { o, items: items.map(({ key, d, i, x }) => ({ key, dr: d.id, idx: i, mcId: x.mcId, lineCode: x.lineCode, desc: x.lineDesc || '', hsn: hsnOf(o, x),
       qty: x.qty, unit: x.unit || '', price: x.price, gst: x.gst, cess: 0, shipTo: x.shipTo, shipAddr: x.shipAddr || '' })),
-    charges: [], asn: false, no: '', date: isoD(TODAY), due: '', docs: [], remarks: '', adding: false };
+    cess: {}, charges: [], asn: false, no: '', date: isoD(TODAY), due: '', docs: [], remarks: '', adding: false };
   const layer = document.getElementById('layer');
   layer.innerHTML = `<div class="inv-ov" data-inv-bg><div class="inv-shell" role="dialog" aria-label="Submit Invoice">
     <div class="inv-prev" id="invPrev"></div>
@@ -1545,13 +1552,24 @@ function openInvoicePanel(keys) {
   setTimeout(() => document.getElementById('invNo')?.focus(), 30);
 }
 /* tax split: CGST + SGST when vendor and billing GSTIN share a state code, IGST otherwise */
+/* the invoice bills PO line items: DI items of the same line (same code, rate and GST) are summed into one invoice line */
+const invGk = y => `${y.lineCode}|${y.price}|${y.gst}`;
 function invCalc(v) {
   const intra = VENDOR.gstin.slice(0, 2) === OFFICES[v.o.office].gstin.slice(0, 2);
-  const lines = v.items.map(y => { const base = r2(y.qty * y.price), tax = r2(base * y.gst / 100), cess = r2(base * (+y.cess || 0) / 100); return { ...y, base, tax, cessAmt: cess, amt: r2(base + tax + cess) }; });
+  const lines = v.items.map(y => { const cessPct = +v.cess[invGk(y)] || 0, base = r2(y.qty * y.price), tax = r2(base * y.gst / 100), cess = r2(base * cessPct / 100);
+    return { ...y, cess: cessPct, base, tax, cessAmt: cess, amt: r2(base + tax + cess) }; });
+  const gm = new Map();
+  lines.forEach(y => {
+    const k = invGk(y), l = v.o.lines.find(x => x.code === y.lineCode);
+    const g = gm.get(k) || gm.set(k, { gk: k, code: y.lineCode, desc: l?.desc || y.desc, ref: l?.ref, hsn: y.hsn, unit: y.unit, price: y.price, gst: y.gst, cess: y.cess,
+      qty: 0, base: 0, tax: 0, cessAmt: 0, amt: 0 }).get(k);
+    ['qty', 'base', 'tax', 'cessAmt', 'amt'].forEach(f => { g[f] = r2(g[f] + y[f]); });
+  });
+  const groups = [...gm.values()];
   const ch = v.charges.map(c => { const base = r2(+c.base || 0), tax = r2(base * (+c.gst || 0) / 100); return { ...c, baseN: base, tax, amt: r2(base + tax) }; });
   const base = r2(lines.reduce((a, y) => a + y.base, 0)), tax = r2(lines.reduce((a, y) => a + y.tax, 0) + ch.reduce((a, c) => a + c.tax, 0));
   const cess = r2(lines.reduce((a, y) => a + y.cessAmt, 0)), charges = r2(ch.reduce((a, c) => a + c.amt, 0));
-  return { intra, lines, ch, base, tax, cess, charges, igst: intra ? 0 : tax, cgst: intra ? r2(tax / 2) : 0, sgst: intra ? r2(tax / 2) : 0, total: r2(base + lines.reduce((a, y) => a + y.tax, 0) + cess + charges) };
+  return { intra, lines, groups, ch, base, tax, cess, charges, igst: intra ? 0 : tax, cgst: intra ? r2(tax / 2) : 0, sgst: intra ? r2(tax / 2) : 0, total: r2(base + lines.reduce((a, y) => a + y.tax, 0) + cess + charges) };
 }
 function drawInvoice(partial) {
   const v = invDraft, c = invCalc(v), off = OFFICES[v.o.office], $ = id => document.getElementById(id);
@@ -1565,7 +1583,7 @@ function drawInvoice(partial) {
         <div class="right"><b>Shipping Address</b><br>${ships.map(y => `${esc(y.shipTo)}${y.shipAddr ? `<br><span class="faint">${esc(y.shipAddr)}</span>` : ''}`).join('<br>')}</div></div>
     </div>
     <table class="inv-tbl"><thead><tr><th>SL No.</th><th>Description</th><th>Unit Price</th><th>Qty</th><th>Price</th><th>Base Amt</th><th>Tax Amt</th><th>Cess Amt</th><th class="right">Amount (INR)</th></tr></thead>
-      <tbody>${c.lines.map((y, n) => `<tr><td>${n + 1}</td><td><b>${esc(y.lineCode)}</b><div class="faint">${esc(y.mcId)} · ${esc(y.dr)}</div></td><td>${fmtN(y.price)}</td><td>${fmtN(y.qty)} ${esc(y.unit)}</td>
+      <tbody>${c.groups.map((y, n) => `<tr><td>${n + 1}</td><td style="max-width:260px"><b>${esc(y.desc)}</b><div class="faint">Item Code: ${esc(y.code)}${y.ref ? ` · Item Ref: ${y.ref}` : ''} · HSN: ${esc(y.hsn)}</div></td><td>${fmtN(y.price)}</td><td>${fmtN(y.qty)} ${esc(y.unit)}</td>
         <td>${fmtN(r2(y.qty * y.price))}</td><td>${fmtN(y.base)}</td><td>${fmtN(y.tax)}</td><td>${fmtN(y.cessAmt)}</td><td class="right">${fmtN(y.amt)}</td></tr>`).join('')}
         ${c.ch.map(x => `<tr><td></td><td>${esc(x.details || x.type)}<div class="faint">${esc(x.type)}</div></td><td colspan="3"></td><td>${fmtN(x.baseN)}</td><td>${fmtN(x.tax)}</td><td>0</td><td class="right">${fmtN(x.amt)}</td></tr>`).join('')}</tbody></table>
     <div class="inv-sum">${[['Base Amt:', c.base], ['Discount Amt:', 0], ['SGST / UTGST:', c.sgst], ['CGST:', c.cgst], ['IGST:', c.igst], ['Cess Amt:', c.cess], ['Tax Amt:', c.tax, 1],
@@ -1579,10 +1597,10 @@ function drawInvoice(partial) {
   const more = myDrs().filter(d => d.po === v.o.no).flatMap(d => openIdx(d).map(i => ({ key: selKey(d, i), d, x: d.items[i] }))).filter(m => !taken.has(m.key));
   $('invLines').innerHTML = `<div class="inv-lbl" style="margin-top:6px">Line Items</div>
     <div class="table-wrap"><table class="mini inv-items"><thead><tr><th>Name</th><th>HSN Code</th><th>Qty</th><th>Price per unit</th><th>Cess %</th><th>Tax %</th><th>Action</th></tr></thead>
-      <tbody>${v.items.length ? v.items.map(y => `<tr><td><b>${esc(y.lineCode)}</b><div class="faint">${esc(y.mcId)} · ${esc(y.dr)}</div></td><td>${esc(y.hsn)}</td>
+      <tbody>${c.groups.length ? c.groups.map(y => `<tr><td style="white-space:normal;min-width:140px"><b>${esc(y.desc.length > 48 ? y.desc.slice(0, 48) + '…' : y.desc)}</b><div class="faint">${esc(y.code)}</div></td><td>${esc(y.hsn)}</td>
         <td>${fmtN(y.qty)} ${esc(y.unit)}</td><td>${fmtN(y.price)}</td>
-        <td><input class="inp inv-num" type="number" min="0" step="0.01" value="${y.cess}" data-inv-cess="${esc(y.key)}" aria-label="Cess %"></td><td>${y.gst}%</td>
-        <td><button class="btn-del" data-inv-rm="${esc(y.key)}" title="Remove from this invoice">${icon('trash', 9, 2)}</button></td></tr>`).join('')
+        <td><input class="inp inv-num" type="number" min="0" step="0.01" value="${v.cess[y.gk] ?? 0}" data-inv-cess="${esc(y.gk)}" aria-label="Cess %"></td><td>${y.gst}%</td>
+        <td><button class="btn-del" data-inv-rm="${esc(y.gk)}" title="Remove this line item from the invoice">${icon('trash', 9, 2)}</button></td></tr>`).join('')
         : '<tr><td colspan="7" class="faint">No Line Items Added</td></tr>'}</tbody></table></div>
     ${v.adding ? `<select class="inp" id="invAdd" style="margin-top:8px"><option value="">Pick an item from another Dispatch Instruction on PO ${v.o.no}…</option>
         ${more.map(m => `<option value="${esc(m.key)}">${m.d.id} · ${esc(m.x.mcId)} · ${esc(m.x.lineCode)} · ${fmtN(m.x.qty)} ${esc(m.x.unit || '')}</option>`).join('')}</select>`
@@ -1615,7 +1633,7 @@ function submitInvoicePanel() {
   const c = invCalc(v);
   const inv = { id: 'INV-' + Date.now().toString(36).toUpperCase(), no: v.no, po: v.o.no, vendor: vendorKey, date: v.date, due: v.due || null, asn: v.asn, selfAddr: VENDOR.name,
     docs: v.docs, remarks: v.remarks,
-    items: c.lines.map(y => ({ dr: y.dr, idx: y.idx, mcId: y.mcId, lineCode: y.lineCode, hsn: y.hsn, qty: y.qty, unit: y.unit, price: y.price, gst: y.gst, cess: +y.cess || 0 })),
+    items: c.lines.map(y => ({ dr: y.dr, idx: y.idx, mcId: y.mcId, lineCode: y.lineCode, hsn: y.hsn, qty: y.qty, unit: y.unit, price: y.price, gst: y.gst, cess: y.cess })),
     charges: c.ch.map(x => ({ details: x.details, type: x.type, base: x.baseN, gst: +x.gst || 0 })),
     base: c.base, igst: c.igst, cgst: c.cgst, sgst: c.sgst, cess: c.cess, chargesTotal: c.charges, amount: c.total,
     status: 'Pending Approval', createdAt: new Date().toISOString() };
@@ -1708,7 +1726,7 @@ document.addEventListener('click', e => {
   if ('diClear' in d) { ui.diSel.clear(); route(); return; }
   if ('invSel' in d) { openInvoicePanel([...ui.diSel]); return; }
   if (invDraft && document.getElementById('invPrev')) {
-    if (d.invRm) { invDraft.items = invDraft.items.filter(y => y.key !== d.invRm); drawInvoice(); return; }
+    if (d.invRm) { invDraft.items = invDraft.items.filter(y => invGk(y) !== d.invRm); drawInvoice(); return; }
     if ('invAdd' in d) { invDraft.adding = true; drawInvoice(); document.getElementById('invAdd')?.focus(); return; }
     if ('invChadd' in d) { invDraft.charges.push({ details: '', type: 'Freight', base: '', gst: 18 }); drawInvoice(); return; }
     if ('invChrm' in d) { invDraft.charges.splice(+d.invChrm, 1); drawInvoice(); return; }
@@ -1746,7 +1764,7 @@ document.addEventListener('input', e => {
   if (invDraft && e.target.closest?.('.inv-form')) {
     const t = e.target, fld = { invNo: 'no', invDate: 'date', invDue: 'due', invRemarks: 'remarks' }[t.id];
     if (fld) { invDraft[fld] = t.value.trim(); t.classList.remove('bad'); const er = document.getElementById(t.id + 'Err'); if (er) er.hidden = true; }
-    if (t.dataset.invCess) invDraft.items.find(y => y.key === t.dataset.invCess).cess = t.value;
+    if (t.dataset.invCess) invDraft.cess[t.dataset.invCess] = t.value;
     if (t.dataset.invCh) { const [n, k] = t.dataset.invCh.split(':'); invDraft.charges[+n][k] = t.value; }
     drawInvoice(true); return;
   }
