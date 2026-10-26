@@ -254,6 +254,12 @@
   .lp-body{padding:10px 12px 12px;overflow-x:auto}
   .lp-body .mc-table{margin-top:0;max-width:none}
   .lp-empty{padding:12px 2px;font-size:10.5px;color:var(--faint)}
+  .log-tag{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:10px;font-size:8.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap;border:1px solid;vertical-align:1px}
+  .lt-po{background:#F1F2F4;color:#55555F;border-color:#DCDDE2}
+  .lt-mc{background:#EAF1FE;color:#1D4ED8;border-color:#C7D8FB}
+  .lt-ir{background:#FFF6E0;color:#8A6100;border-color:#F1DDA6}
+  .lt-dr{background:#E7F5EC;color:#1F7A45;border-color:#B9E0C7}
+  .lt-inv{background:#F1EFFC;color:#5B4CC4;border-color:#D9D3F7}
   .lines-subbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px;font-size:10px;color:var(--muted)}
   .sub-tab{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px;border:1px solid var(--border);border-radius:12px;background:#fff;
     font-size:9.5px;font-weight:600;color:#44444C;letter-spacing:.02em;cursor:pointer}
@@ -1738,9 +1744,9 @@ function renderPODetail(id) {
               <tbody>${po.tags.map(t2 => `<tr><td>${esc(t2.key)}</td><td>${esc(t2.value)}</td></tr>`).join('')}</tbody></table></div>` : ''}
           </div>
           <div class="po-sub-title" style="font-size:11px;margin-top:22px">Logs</div>
-          ${po.logs.length ? `<div class="po-box"><table class="mini-table po-mini"><thead>${thRow(['Time','Activity','By'])}</thead>
-            <tbody>${po.logs.map(g => `<tr><td>${fmtDT(g.at)}</td><td>${esc(g.text)}</td><td class="right">${esc(g.by)}</td></tr>`).join('')}</tbody></table></div>`
-            : emptyBox('No Logs')}
+          ${(() => { const logs = poActivity(po); return logs.length ? `<div class="po-box"><table class="mini-table po-mini"><thead>${thRow(['Time','Activity','By'])}</thead>
+            <tbody>${logs.map(g => `<tr><td>${fmtDT(g.at)}</td><td><span class="log-tag lt-${g.type}">${LOG_TAGS[g.type]}</span>${esc(g.text)}</td><td class="right">${esc(g.by)}</td></tr>`).join('')}</tbody></table></div>`
+            : emptyBox('No Logs'); })()}
         </section>
       </div>
     </div>
@@ -2375,6 +2381,55 @@ function mcRow(po, l, i) {
   </td></tr>`;
 }
 
+/* ---------- PO Logs: the PO's own entries plus every Manufacturing Clearance, Inspection Request, Dispatch Instruction and
+   invoice event, rebuilt from the shared records on each render — so actions taken on the Vendor and Employee portals show up too ---------- */
+const LOG_TAGS = { po: 'Purchase Order', mc: 'Manufacturing Clearance', ir: 'Inspection Request', dr: 'Dispatch Instruction', inv: 'Invoice' };
+function poActivity(po) {
+  const ev = po.logs.map(g => ({ ...g, type: 'po' })), vendor = PO_VENDORS[po.vendor][0];
+  const add = (type, at, text, by) => { if (at) ev.push({ type, at: at instanceof Date ? at : new Date(at), text, by }); };
+  const who = k => k === 'vendor' ? vendor : APPROVERS[k] ? `${apprName(k)} (${APPROVERS[k].role})` : k;
+  /* Manufacturing Clearance */
+  po.lines.forEach(l => l.mcs.forEach(m => {
+    add('mc', m.createdAt, `${m.id} created on line ${l.code}: ${fmtNum(m.qty)} ${l.unit} to ${officeName(m.office)}, earliest delivery ${fmtD(m.date)}${m.irRequired === false ? ' · inspection not required' : ''} · status Created`, m.by || 'Admin');
+    if (m.withdrawnAt) add('mc', m.withdrawnAt, `${m.id} withdrawn · ${fmtNum(m.qty)} ${l.unit} returned to line ${l.code}${m.withdrawReason ? ` · “${m.withdrawReason}”` : ''} · status Created → Withdrawn`, m.withdrawnBy || 'Admin');
+  }));
+  /* Inspection Requests (a merged IR is one record per MC item sharing the id) */
+  const groups = new Map();
+  readIRs().filter(r => r.po === po.number).forEach(r => { if (!groups.has(r.id)) groups.set(r.id, []); groups.get(r.id).push(r); });
+  groups.forEach((items, id) => {
+    const r0 = items[0], a = r0.appr || {};
+    add('ir', r0.createdAt, `${id} raised for ${items.map(x => `${x.mcId} (${fmtNum(x.qty)} ${x.unit || ''})`).join(', ')} · inspection proposed for ${fmtD(isoToDate(r0.inspDate))} · status Pending`, r0.by || vendor);
+    (a.history || []).forEach(h => {
+      const verb = { approved: 'approved', declined: 'declined', hold: 'put on hold', unhold: 'released from hold' }[h.t] || h.t;
+      const waived = h.waivers ? Object.keys(h.waivers) : h.waive ? items.map(x => x.mcId) : [];
+      add('ir', h.at, `${id} ${verb}${waived.length ? ` · inspection waived for ${waived.join(', ')}` : ''}${h.note ? ` · “${h.note}”` : ''}${h.t === 'declined' ? ' · status Pending → Declined' : ''}`, who(h.by));
+    });
+    (a.clar || []).forEach(c => add('ir', c.at, `${id} clarification ${c.by === 'vendor' ? 'reply' : 'asked'}: “${c.text}”`, who(c.by)));
+    if (r0.approvedAt) {
+      const wv = items.filter(x => x.inspectionWaived);
+      add('ir', r0.approvedAt, `${id} fully approved · status Pending → ${wv.length < items.length ? 'Result Pending' : 'Ready to Dispatch'}${wv.length && wv.length < items.length ? ` (${wv.map(x => x.mcId).join(', ')} → Ready to Dispatch, inspection waived)` : wv.length ? ' (inspection waived)' : ''}`, 'System');
+    }
+    if (r0.withdrawnAt) add('ir', r0.withdrawnAt, `${id} withdrawn${r0.withdrawReason ? ` · “${r0.withdrawReason}”` : ''} · status Pending → Withdrawn`, r0.withdrawnBy || vendor);
+    items.filter(x => x.inspectedAt && !x.inspectionWaived).forEach(x => add('ir', x.recordedAt || isoToDate(x.inspectedAt),
+      `${irLabel(x)} (${x.mcId}) inspection recorded by ${x.inspector || '—'}: ${fmtNum(x.accepted)} accepted, ${fmtNum(x.rejected)} rejected · status Result Pending → ${x.accepted > 0 ? 'Ready to Dispatch' : 'Rejected'}`, x.recordedBy || 'Admin'));
+  });
+  /* Dispatch Instructions and the invoices against them; a DI's status moves as its items get billed */
+  const invs = readInvs().filter(v => v.po === po.number);
+  drsOfPo(po).forEach(d => {
+    add('dr', d.createdAt, `${d.id} created against ${d.irId || d.mcId}: ${unitTotals(d.items, x => x.qty)} · dispatch by ${fmtD(isoToDate(d.dispatchBy))} · ${d.mode} · status Invoice Pending`, d.by || 'Admin');
+    if (d.invoice && !d.invList) { add('dr', d.invoice.createdAt, `${d.id} invoiced (${d.invoice.no}) · status Invoice Pending → Invoice Submitted`, vendor); return; }
+    let billed = 0, st = 'Invoice Pending';
+    (d.invList || []).slice().sort((x, y) => x.createdAt.localeCompare(y.createdAt)).forEach(v => {
+      billed += v.items.filter(y => y.dr === d.id).length;
+      const nx = billed >= d.items.length ? 'Invoice Submitted' : 'Partially Invoiced';
+      if (nx !== st) add('dr', v.createdAt, `${d.id} status ${st} → ${nx} (invoice ${v.no})`, 'System');
+      st = nx;
+    });
+  });
+  invs.forEach(v => add('inv', v.createdAt, `Invoice ${v.no} submitted for ${money(v.amount, po.currency)} against ${[...new Set(v.items.map(y => y.dr))].join(', ')} · status ${v.status}`, vendor));
+  return ev.map((e, n) => ({ ...e, n })).sort((x, y) => y.at - x.at || y.n - x.n);   // same instant: the later-recorded event first
+}
+
 /* =====================================================================
    Inspection Request section (between Line Items and Dispatch Instructions) + IR detail pop-up.
    A merged vendor IR is stored as one record per MC item sharing the same id.
@@ -2719,7 +2774,6 @@ function drForm(po, c) {
     all.push(dr); writeDRs(all);
     const q = unitTotals(dr.items, x => x.qty);
     po.timeline.push({ title: 'Dispatch Instruction Created', by: `${dr.id}: ${q} against ${c.source}`, at: new Date() });
-    poLog(po, `${dr.id} created against ${c.source} for ${q}`);
     ov.remove(); rerenderPO();
     toast(`${dr.id} created · visible to the vendor`);
   });
@@ -2824,10 +2878,9 @@ function openIrRecord(po, irId) {
     const { a, j } = vals();
     const all = readIRs(), x = all.find(y => irKey(y) === irId);
     Object.assign(x, { accepted: r2(a), rejected: r2(j), inspectedAt: f.date.value, inspector: f.by.value.trim(),
-      inspRemarks: f.remarks.value.trim(), status: a > 0 ? 'Ready to Dispatch' : 'Rejected' });
+      inspRemarks: f.remarks.value.trim(), status: a > 0 ? 'Ready to Dispatch' : 'Rejected', recordedAt: new Date().toISOString(), recordedBy: 'Admin' });
     writeIRs(all);
     po.timeline.push({ title: 'Inspection Completed', by: `${irLabel(x)}: ${fmtNum(a)} accepted, ${fmtNum(j)} rejected`, at: new Date() });
-    poLog(po, `${irLabel(x)} inspected: ${fmtNum(a)} accepted, ${fmtNum(j)} rejected`);
     ov.remove(); rerenderPO();
     const group = all.filter(y => y.po === x.po && y.id === x.id);
     toast(irOverall(group) === 'Ready to Dispatch' ? `${x.id} fully inspected · ready for Dispatch Instruction` : `${irLabel(x)}: ${fmtNum(a)} accepted, ${fmtNum(j)} rejected`);
@@ -2976,7 +3029,6 @@ function openMcModal(po, lineIdx) {
     });
     const direct = rows.filter(r => !r.irReq).length;
     po.timeline.push({ title: 'Manufacturing Clearance Created', by: `${n} schedule(s) by Admin${direct ? ` · inspection not required on ${direct} line(s)` : ''}`, at: new Date() });
-    poLog(po, `Manufacturing Clearance created: ${n} schedule(s) across ${rows.length} line item(s)${direct ? ` · inspection not required on ${rows.filter(r => !r.irReq).map(r => po.lines[r.i].code).join(', ')}` : ''}`);
     ui.mcSel = new Set();
     saveMcs();
     ov.remove(); rerenderPO();
@@ -3019,7 +3071,6 @@ const MC_ACTIONS = {
         Object.assign(m, { status: 'Withdrawn', withdrawnAt: new Date(), withdrawnBy: 'Admin', withdrawReason: v.reason.trim() });
         saveMcs();
         po.timeline.push({ title: 'Manufacturing Clearance Withdrawn', by: `${m.id} by Admin`, at: new Date() });
-        poLog(po, `${m.id} withdrawn · ${fmtNum(m.qty)} ${l.unit} returned to line ${l.code} · ${v.reason.trim()}`);
         rerenderPO();
         toast(`${m.id} withdrawn · ${fmtNum(after)} ${l.unit} now available for clearance`);
       } });
